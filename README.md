@@ -170,8 +170,20 @@ Station page loads.
 | `examples/samples/` | The official FTC sample OpModes that run in the simulator (unmodified) |
 | `robots/` | Robot descriptions |
 
-## Credits and licenses
+## License
 
-FTC sample OpModes © FIRST, BSD-style license (`examples/samples/LICENSE-FTC-SDK`). Field
-layout from the BIOBUZZ presented by RTX Competition Manual (FIRST Tech Challenge 2026–27).
-Libraries: ODE4j (BSD/LGPL), Javalin and Gson (Apache 2.0), Three.js (MIT).
+The simulator is released under the [MIT License](LICENSE).
+
+Third-party code in this repository keeps its own license:
+
+| Path | What | License |
+|---|---|---|
+| `examples/samples/` | FTC SDK sample OpModes, © FIRST | BSD-3-Clause-Clear ([LICENSE-FTC-SDK](examples/samples/LICENSE-FTC-SDK)) |
+| `engine/src/main/resources/web/vendor/` | Three.js and OrbitControls, © three.js authors | MIT ([THREE-LICENSE](engine/src/main/resources/web/vendor/THREE-LICENSE)) |
+
+Libraries that Gradle downloads at build time: ODE4j (LGPL-2.1-or-later or BSD-style, at your
+choice), Javalin, Gson and Kotlin stdlib (Apache-2.0), Jetty (Apache-2.0 or EPL-2.0), SLF4J (MIT).
+
+The field layout follows the *BIOBUZZ presented by RTX* Competition Manual (FIRST Tech Challenge
+2026–27). FIRST®, FIRST® Tech Challenge and BIOBUZZ™ are trademarks of FIRST (For Inspiration and
+Recognition of Science and Technology). This project is not affiliated with or endorsed by FIRST.
