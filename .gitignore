@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+local.properties
+
+# Each person's simulator defaults (project path etc.); sim.properties.example is the template
+sim.properties
+
+# Java
+*.class
+*.hprof
+*.log
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+out/
+bin/
+
+# OS
+.DS_Store
+Thumbs.db

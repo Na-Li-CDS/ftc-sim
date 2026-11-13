@@ -1,0 +1,78 @@
+plugins {
+    id 'application'
+}
+
+configurations {
+    // The official FTC SDK, used only by ApiConformanceTest to check that the simulator's SDK
+    // exposes nothing the real one doesn't (so TeamCode that builds here builds for the robot).
+    realFtcSdk {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
+}
+
+def ftcSdkVersion = '12.0.0'
+
+dependencies {
+    implementation project(':sdk')
+    implementation 'org.ode4j:core:0.5.4'          // rigid-body physics (pure-Java port of ODE)
+    implementation 'io.javalin:javalin:7.2.4'      // HTTP + WebSocket server for the browser UI
+    implementation 'com.google.code.gson:gson:2.15.0'
+    runtimeOnly 'org.slf4j:slf4j-simple:2.0.20'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    realFtcSdk "org.firstinspires.ftc:RobotCore:${ftcSdkVersion}@aar"
+    realFtcSdk "org.firstinspires.ftc:Hardware:${ftcSdkVersion}@aar"
+    realFtcSdk "org.firstinspires.ftc:Vision:${ftcSdkVersion}@aar"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 17
+}
+
+application {
+    mainClass = 'ftcsim.Main'
+    applicationName = 'ftc-sim'
+}
+
+tasks.named('run') {
+    workingDir = rootProject.projectDir
+    standardInput = System.in
+    // Pass simulator options with: gradlew run --args="--project C:/path/to/FtcRobotController"
+}
+
+def realSdkDir = layout.buildDirectory.dir('real-ftc-sdk')
+
+def extractRealFtcSdk = tasks.register('extractRealFtcSdk') {
+    def aars = configurations.realFtcSdk
+    inputs.files(aars)
+    outputs.dir(realSdkDir)
+    doLast {
+        def out = realSdkDir.get().asFile
+        out.mkdirs()
+        aars.each { aar ->
+            def zip = new java.util.zip.ZipFile(aar)
+            try {
+                def entry = zip.getEntry('classes.jar')
+                new File(out, aar.name.replace('.aar', '.jar')).withOutputStream { os -> os << zip.getInputStream(entry) }
+            } finally {
+                zip.close()
+            }
+        }
+    }
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    dependsOn extractRealFtcSdk
+    workingDir = rootProject.projectDir
+    systemProperty 'ftcsim.realSdkDir', realSdkDir.get().asFile.absolutePath
+    systemProperty 'ftcsim.simSdkClasses', "${rootDir}/sdk/build/classes/java/main"
+    testLogging {
+        events 'passed', 'failed', 'skipped'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}

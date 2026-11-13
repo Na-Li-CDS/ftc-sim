@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FTC Simulator</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='8' width='24' height='16' rx='3' fill='%23e5484d'/%3E%3Ccircle cx='10' cy='26' r='4' fill='%23222'/%3E%3Ccircle cx='22' cy='26' r='4' fill='%23222'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.min.js" } }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo" aria-hidden="true"></span>FTC Simulator</div>
+    <div class="conn" id="conn" title="Connection to the simulator"><span class="dot"></span><span id="connText">Connecting…</span></div>
+    <div class="project" id="project" title="TeamCode being simulated"></div>
+    <div class="spacer"></div>
+    <label class="robotpick">Robot
+      <select id="robotSelect" title="Robot description (robots/*.json)"></select>
+    </label>
+    <div class="stat" title="Battery voltage"><span class="k">Battery</span><span id="battery">–</span></div>
+    <div class="stat" title="Simulated time / real time"><span class="k">Real-time</span><span id="rtf">–</span></div>
+  </header>
+
+  <main class="layout">
+    <section class="viewport" aria-label="3D field view">
+      <canvas id="scene"></canvas>
+      <div class="hud top-left">
+        <div class="seg" role="group" aria-label="Camera">
+          <button data-cam="audience" class="on">Audience</button>
+          <button data-cam="overhead">Overhead</button>
+          <button data-cam="driver">Red driver</button>
+          <button data-cam="follow">Chase</button>
+        </div>
+        <div class="seg" role="group" aria-label="Robot">
+          <button id="placeBtn" title="Click on the field to move the robot; drag to aim it">Place robot</button>
+          <button id="resetBtn" title="Power-cycle the robot and put it back at its start position">Reset</button>
+        </div>
+      </div>
+      <div class="hud bottom-left pose" id="pose"></div>
+      <div class="hud bottom-right keys" id="keys" hidden>
+        <b>Keyboard → gamepad 1</b>
+        <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> left stick · <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> right stick</div>
+        <div><kbd>K</kbd> A · <kbd>L</kbd> B · <kbd>J</kbd> X · <kbd>I</kbd> Y · <kbd>Q</kbd>/<kbd>E</kbd> bumpers · <kbd>Z</kbd>/<kbd>C</kbd> triggers</div>
+        <div><kbd>T</kbd><kbd>F</kbd><kbd>G</kbd><kbd>H</kbd> d-pad · <kbd>[</kbd> back · <kbd>]</kbd> start · hold <kbd>Shift</kbd> for 40% sticks</div>
+      </div>
+      <div class="placing-hint" id="placeHint" hidden>Click to place the robot · drag to aim · Esc to cancel</div>
+    </section>
+
+    <aside class="ds" aria-label="Driver Station">
+      <div class="card opmode-card">
+        <div class="row">
+          <select id="opmodeSelect" aria-label="OpMode"></select>
+          <label class="check" title="List the FTC SDK sample OpModes (they are @Disabled on a real robot)">
+            <input type="checkbox" id="showSamples"> Samples
+          </label>
+        </div>
+        <div class="row controls">
+          <button id="mainBtn" class="big init" disabled>INIT</button>
+          <button id="stopBtn" class="stop" title="Stop" disabled aria-label="Stop">■</button>
+        </div>
+        <div class="row status">
+          <span id="dsState" class="pill">No OpMode</span>
+          <span id="timer" class="timer"></span>
+          <label class="check" title="Stop Autonomous OpModes after 30 seconds, like the Driver Station timer">
+            <input type="checkbox" id="autoTimer" checked> 30 s auto timer
+          </label>
+        </div>
+      </div>
+
+      <div class="banner error" id="errorBanner" hidden>
+        <div class="body">
+          <div class="msg" id="errorText"></div>
+          <button id="errorFix" class="fix" hidden></button>
+        </div>
+        <button id="errorDismiss" class="ghost" aria-label="Dismiss">Dismiss</button>
+      </div>
+      <div class="banner warn" id="warnBanner" hidden></div>
+
+      <div class="card telemetry-card">
+        <div class="card-title">Telemetry</div>
+        <div class="telemetry" id="telemetry" aria-live="polite"></div>
+        <div class="telemetry-log" id="telemetryLog"></div>
+      </div>
+
+      <div class="card gamepads">
+        <div class="gp" id="gp1">
+          <div class="gp-head"><span class="gp-name">Gamepad 1</span><select id="gp1Source" aria-label="Gamepad 1 source"></select></div>
+          <div class="gp-viz"></div>
+        </div>
+        <div class="gp" id="gp2">
+          <div class="gp-head"><span class="gp-name">Gamepad 2</span><select id="gp2Source" aria-label="Gamepad 2 source"></select></div>
+          <div class="gp-viz"></div>
+        </div>
+      </div>
+
+      <div class="card tabs-card">
+        <div class="tabs" role="tablist">
+          <button role="tab" data-tab="devices" class="on">Devices</button>
+          <button role="tab" data-tab="build">Build <span id="buildBadge" class="badge" hidden></span></button>
+          <button role="tab" data-tab="log">Robot log</button>
+        </div>
+        <div class="tab" data-tab="devices">
+          <table class="devices" id="motorTable"><thead><tr><th>Motor</th><th>Mode</th><th>Power</th><th>Encoder</th><th>Vel t/s</th><th>A</th></tr></thead><tbody></tbody></table>
+          <table class="devices" id="servoTable"><thead><tr><th>Servo</th><th>Position</th><th>Angle</th><th>PWM</th></tr></thead><tbody></tbody></table>
+          <table class="devices" id="sensorTable"><thead><tr><th>Sensor</th><th>Reading</th></tr></thead><tbody></tbody></table>
+          <div class="hubs" id="hubs"></div>
+        </div>
+        <div class="tab" data-tab="build" hidden>
+          <div class="build-msg" id="buildMsg"></div>
+          <div class="build-roots" id="buildRoots"></div>
+          <ul class="skipped" id="skipped"></ul>
+          <button id="buildBtn" class="secondary">Build now</button>
+          <p class="hint">TeamCode rebuilds automatically when you save a file. While an OpMode runs, the rebuild waits until it stops.</p>
+        </div>
+        <div class="tab" data-tab="log" hidden>
+          <div class="robot-log" id="robotLog"></div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

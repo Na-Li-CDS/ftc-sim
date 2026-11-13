@@ -1,0 +1,10 @@
+plugins {
+    id 'java-library'
+}
+
+// Robot code in an FtcRobotController project is compiled as Java 8, so the SDK stand-in is too.
+// That keeps TeamCode honest: code that compiles here also compiles in Android Studio.
+tasks.withType(JavaCompile).configureEach {
+    options.release = 8
+    options.compilerArgs += ['-Xlint:-options']
+}

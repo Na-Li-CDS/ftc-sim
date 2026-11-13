@@ -1,0 +1,113 @@
+# Builds the simulator and runs its tests on Windows, Linux and macOS, then starts it with the
+# same launcher a team would use (run-sim.bat / run-sim.sh) against a small robot project whose
+# path contains spaces, and checks that TeamCode compiles and the Driver Station page loads.
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · JDK ${{ matrix.java }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        java: ['21']
+        include:
+          # The README promises JDK 17 or newer, so the oldest supported JDK gets a run too.
+          - os: ubuntu-latest
+            java: '17'
+    defaults:
+      run:
+        shell: bash
+    env:
+      SIM_PORT: '8188'
+      SIM_PROJECT: build/ci project/FtcRobotController
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      # Caches Gradle and its downloads, and checks that gradle-wrapper.jar is an official one.
+      - uses: gradle/actions/setup-gradle@v6
+
+      # "sh ./gradlew" works even when the script lost its executable bit (e.g. committed from Windows).
+      - name: Build and test
+        run: sh ./gradlew build --console=plain
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-${{ matrix.os }}-jdk${{ matrix.java }}
+          path: |
+            engine/build/reports/tests/
+            engine/build/test-results/
+          if-no-files-found: ignore
+
+      - name: Create a robot project to simulate
+        run: |
+          dir="$SIM_PROJECT/TeamCode/src/main/java/org/firstinspires/ftc/teamcode"
+          mkdir -p "$dir"
+          cp examples/teamcode/org/firstinspires/ftc/teamcode/*.java "$dir/"
+          ls "$dir"
+
+      - name: Start with run-sim.bat
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'sim.log'
+          $p = Start-Process -FilePath .\run-sim.bat -PassThru -NoNewWindow `
+            -ArgumentList '--project', "`"$env:SIM_PROJECT`"", '--no-browser', '--port', $env:SIM_PORT `
+            -RedirectStandardOutput $log -RedirectStandardError "$log.err"
+          $deadline = (Get-Date).AddMinutes(5)
+          do {
+            Start-Sleep -Seconds 2
+            $text = Get-Content $log -Raw -ErrorAction SilentlyContinue
+          } until (($text -match 'TeamCode: (Built|Compilation failed)') -or $p.HasExited -or ((Get-Date) -gt $deadline))
+          Get-Content $log, "$log.err" -ErrorAction SilentlyContinue
+          try {
+            if ($text -notmatch 'TeamCode: Built') { throw 'The simulator did not build TeamCode.' }
+            if ($text -match 'skipped') { throw 'TeamCode files were skipped.' }
+            $page = Invoke-WebRequest "http://127.0.0.1:$env:SIM_PORT/" -UseBasicParsing
+            if ($page.Content -notmatch 'FTC Simulator') { throw 'The Driver Station page did not load.' }
+            Write-Host 'Simulator started, built TeamCode and served the Driver Station page.'
+          } finally {
+            taskkill /PID $p.Id /T /F | Out-Null
+          }
+
+      - name: Start with run-sim.sh
+        if: runner.os != 'Windows'
+        run: |
+          log="$RUNNER_TEMP/sim.log"
+          sh run-sim.sh --project "$SIM_PROJECT" --no-browser --port "$SIM_PORT" > "$log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 150); do
+            grep -qE 'TeamCode: (Built|Compilation failed)' "$log" && break
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 2
+          done
+          cat "$log"
+          grep -q 'TeamCode: Built' "$log" || { echo "::error::The simulator did not build TeamCode."; exit 1; }
+          if grep -q 'skipped' "$log"; then echo "::error::TeamCode files were skipped."; exit 1; fi
+          curl -fsS "http://127.0.0.1:$SIM_PORT/" | grep -q 'FTC Simulator' \
+            || { echo "::error::The Driver Station page did not load."; exit 1; }
+          echo "Simulator started, built TeamCode and served the Driver Station page."

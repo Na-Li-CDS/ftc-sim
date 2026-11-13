@@ -1,0 +1,22 @@
+plugins {
+    id 'java'
+}
+
+// Type-checks the bundled examples against the simulator's SDK, the same way the simulator
+// compiles your TeamCode (Java 8, SDK 12.0 API). `gradlew build` fails if any of them break.
+dependencies {
+    implementation project(':sdk')
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['samples', 'teamcode']
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 8
+    options.compilerArgs += ['-Xlint:-options']
+}

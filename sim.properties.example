@@ -1,0 +1,15 @@
+# Copy this file to sim.properties (same folder) to set defaults for run-sim.bat / run-sim.sh.
+# Command-line options override these.
+
+# Your FtcRobotController project (the folder that contains TeamCode/).
+# Use forward slashes or doubled backslashes on Windows.
+#project=C:/Users/you/Documents/GitHub/FtcRobotController
+
+# Robot description to simulate (see robots/).
+robot=robots/mecanum.json
+
+# Web port for the browser Driver Station.
+port=8080
+
+# Open the browser automatically when the simulator starts.
+open_browser=true

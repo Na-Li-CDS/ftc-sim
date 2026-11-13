@@ -1,0 +1,8 @@
+rootProject.name = 'ftc-sim'
+
+// sdk      : desktop drop-in for the FTC SDK 12.0 API (same packages, classes and signatures)
+// engine   : physics (ODE4j), Driver Station server, OpMode runner, 3D web UI
+// examples : the official FTC sample OpModes that run in the simulator, plus example TeamCode.
+//            Your own robot code stays in your FtcRobotController project; point the
+//            simulator at it with --project.
+include 'sdk', 'engine', 'examples'

@@ -1,0 +1,171 @@
+# FTC Simulator
+
+Run your real FTC robot code (the `TeamCode` in your FtcRobotController project) against a
+simulated robot on the **BIOBUZZ** (2026–27) field. Drive it from a browser Driver Station with
+an Xbox/PlayStation controller or the keyboard. When it works in the simulator, deploy the
+same code to the robot as usual. Nothing in TeamCode changes.
+
+![Driver Station and 3D field](docs/screenshot.png)
+
+## Quick start
+
+1. Install a JDK 17 or newer (Android Studio's bundled JDK works, or [Temurin](https://adoptium.net)).
+   `run-sim.bat` also finds a JDK unpacked in `%USERPROFILE%\.jdks`.
+2. Start the simulator with your robot project:
+
+   ```bat
+   .\run-sim.bat --project "C:\path\to\FtcRobotController"
+   ```
+
+   On macOS and Linux: `sh run-sim.sh --project ~/FtcRobotController`. Without `--project` it
+   runs the bundled examples and the official FTC samples.
+3. Your browser opens at <http://localhost:8080>. Pick an OpMode, press **INIT**, then **▶ START**.
+
+To avoid typing the path every time, copy `sim.properties.example` to `sim.properties` and set
+`project=`.
+
+## The edit → simulate → robot loop
+
+- Edit TeamCode in Android Studio or VS Code as you normally do. When you save, the simulator
+  recompiles within a second or two and the OpMode list refreshes. If an OpMode is running, the
+  rebuild waits until you stop it.
+- TeamCode is compiled the way Android Studio compiles it: **Java 8**, against the **FTC SDK 12.0**
+  API. An automated test checks the simulator's SDK against the official SDK 12.0 jars, class by
+  class and method by method, so code that compiles here also compiles for the robot.
+- Files that use something the simulator does not model (for example `VisionPortal`, or
+  Android UI classes) are skipped and listed under **Build** with the reason. Everything else still
+  runs.
+- Never import `ftcsim.*` in TeamCode. Those are simulator internals that don't exist on the robot,
+  and the simulator refuses to build a file that uses them.
+- Deploy to the robot with your usual tools. The simulator never writes to your project.
+
+## Driving
+
+**Controller.** Plug in or pair an Xbox or PlayStation controller, click the simulator page, and
+**press any button**: browsers only expose a controller after a button press. *Gamepad 1 = Auto*
+uses the first controller. Rumble (`gamepad1.rumble(...)`, `rumbleBlips(...)`) plays on the
+controller in Chrome and Edge (Firefox has no controller rumble), so use Chrome or Edge on any
+operating system. The Xbox Guide button may be taken by the Windows Game Bar.
+
+**Keyboard** (used for gamepad 1 when no controller is present, or pick *Keyboard* for either slot):
+
+| Keys | Gamepad |
+|---|---|
+| W A S D | left stick (W = forward) |
+| ← ↑ ↓ → | right stick |
+| K · L · J · I | A · B · X · Y |
+| Q · E | left / right bumper |
+| Z · C | left / right trigger |
+| T F G H | d-pad up / left / down / right |
+| [ · ] | back · start |
+| hold Shift | sticks at 40 % |
+
+With one controller, set **Gamepad 2 → Keyboard** to try two-driver code.
+
+## The Driver Station panel
+
+- **OpMode list** with Autonomous and TeleOp groups. Tick *Samples* to show the FTC SDK samples,
+  which are `@Disabled` on a real robot.
+- **INIT / START / STOP** with the same rules as the real app. The optional **30 s auto timer** stops
+  Autonomous OpModes and then preselects the TeleOp named in `preselectTeleOp`.
+- **Errors** appear the way the Driver Station shows them, e.g.
+  `User code threw an uncaught exception: IllegalArgumentException - Unable to find a hardware device with name "left_drive" and type DcMotor (at MyOpMode.init:42)`.
+- **Telemetry**, including `telemetry.log()`, `Func` items, retained items, the 250 ms transmission
+  interval and the HTML display format.
+- **Devices**: every motor's mode, power, encoder, velocity and current; servo positions; sensor
+  readings; hub LED and bulk-caching mode. **Robot log** shows `RobotLog` and `android.util.Log`.
+- **3D view**: audience, overhead, red-driver and chase cameras. *Place robot* puts the robot
+  anywhere (drag to aim it). *Reset* power-cycles it, which resets encoders and the IMU heading.
+
+## Describing your robot
+
+Robots are JSON files in `robots/`. Choose one with `--robot` or from the top bar.
+**Device names must match your robot configuration on the Driver Station**, because your code
+looks devices up by those names.
+
+- `robots/mecanum.json`: 18 in mecanum robot (goBILDA 312 RPM, 104 mm wheels) using the SDK 12
+  sample names `front_left_drive` …, plus `imu`, `pinpoint`, `sensor_otos`, `sensor_distance`,
+  `sensor_color`, `sensor_touch`, `digitalTouch`, and a BIOBUZZ-style `intake`, `launcher`
+  (flywheel), `hood` servo and `feeder` CR servo.
+- `robots/tank.json`: six-wheel drop-center tank with `left_drive` / `right_drive`, an arm
+  (`left_arm`, also `arm`) and claw servos (`left_hand`, `right_hand`), for the classic samples.
+
+Main fields (meters and degrees; robot frame +x forward, +y left, +z up):
+
+| Section | What it sets |
+|---|---|
+| `chassis` | size, mass, color |
+| `drive` | `type` (`mecanum`, `tank`, `tank4`), wheel diameter, wheelbase, track width, `motor` model, external gear ratio, motor names, grip |
+| `imu` | name and how the Control Hub is mounted (`logo`, `usb`, same words as `RevHubOrientationOnRobot`) |
+| `devices` | `motor` (with a `load`: `roller`, `flywheel`, `arm` with gravity and hard stops, `slide`), `servo`, `crservo`, `pinpoint` (pod offsets, pod type), `otos`, `distance`, `color`, `touch`, `digital_touch`, `webcam`; each with a mounting position and an optional `role` for the 3D model |
+| `io` | simulated bus latency (default 1 ms per hub command, 2.5 ms per I2C read) |
+| `start` | starting pose `[x, y, heading]` on the field |
+
+Motor models come from vendor datasheets: goBILDA 5203 (all ratios), REV HD Hex (spur and
+UltraPlanetary), REV Core Hex, NeveRest, TETRIX. If you mount a sensor differently from what
+your code assumes (for example the IMU orientation or the Pinpoint pod offsets), the readings
+are wrong in the same way they would be on the robot.
+
+## What is simulated
+
+- **Physics** uses [ODE4j](https://github.com/tzaeschke/ode4j) at 1 kHz in real time. The robot
+  is a chassis plus one body per wheel. Each mecanum wheel grips only along its roller axis, which
+  is the standard way Gazebo models mecanum wheels, so strafing, wheel slip and pushing against
+  walls behave physically. The robot collides with the walls, the HIVE structure's A-frames and
+  the FLOWERS.
+- **Motors** follow their torque-speed curve, sag the battery under load, and BRAKE/FLOAT
+  correctly. The **hub firmware** implements `RUN_WITHOUT_ENCODER`, `RUN_USING_ENCODER`
+  (velocity PIDF), `RUN_TO_POSITION`, `STOP_AND_RESET_ENCODER`, `setVelocity`, PIDF tuning,
+  current and over-current, and **bulk caching** (`OFF` / `AUTO` / `MANUAL`). Encoders don't
+  reset between OpModes, just as on a real robot.
+- **Sensors**: the Control Hub IMU (`IMU`, yaw/pitch/roll, angular velocity, mounting
+  orientation), goBILDA Pinpoint (its own odometry from your offsets, resolution and directions),
+  SparkFun OTOS, REV 2m distance (raycast), REV Color Sensor V3 (tape and tiles under it), REV
+  touch sensor / digital channel, and battery voltage.
+- **OpMode lifecycle**: iterative and linear OpModes, `waitForStart`, `opModeInInit`,
+  `isStopRequested`, thread interruption on STOP, `requestOpModeStop`, `terminateOpModeNow`,
+  `OpMode.blackboard`. When an OpMode ends, motors stop and servos go limp.
+- **Loop timing**: hardware calls take about as long as on a real Control Hub, so control-loop
+  tuning carries over.
+
+**Not simulated yet**: VisionPortal / AprilTag / color-blob processing, game pieces and scoring,
+the HIVE tipping, LEDs and sounds, Limelight, OctoQuad, legacy BNO055 / Modern Robotics sensors.
+OpModes that use them are skipped at build time with the reason.
+
+## Checking the simulator itself
+
+```bat
+gradlew test
+```
+
+The suite includes:
+
+- `ApiConformanceTest`: the simulator's SDK must be a subset of the official FTC SDK 12.0. It
+  downloads the official jars from Maven Central.
+- `DrivetrainPhysicsTest`, `RestDriftTest`: speed, strafing, turning, RUN_TO_POSITION, wall
+  contact, no drift at rest.
+- `SampleOpModesTest`, `ExampleOpModesTest`: the official samples and the examples run end to
+  end. For example, `RobotAutoDriveByGyro_Linear` returns to within about 10 cm of its start, and
+  the Pinpoint auto to within 0.2 in.
+
+On GitHub, [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs these tests on Windows,
+Ubuntu and macOS (JDK 21, plus JDK 17 on Ubuntu) for every push to `main`/`master` and every pull
+request. On each OS it also starts the simulator with `run-sim.bat` or `run-sim.sh` against a
+robot project whose path contains spaces. It then checks that TeamCode compiles with no files
+skipped and that the Driver Station page loads.
+
+## Project layout
+
+| Path | Contents |
+|---|---|
+| `sdk/` | Desktop stand-in for the FTC SDK 12.0 API (same packages and signatures); simulator internals are in `ftcsim.hal` |
+| `engine/` | Physics, robot model, OpMode runner, TeamCode compiler, web server, browser UI (`src/main/resources/web`) |
+| `examples/teamcode/` | Example OpModes for the default robot |
+| `examples/samples/` | The official FTC sample OpModes that run in the simulator (unmodified) |
+| `robots/` | Robot descriptions |
+
+## Credits and licenses
+
+FTC sample OpModes © FIRST, BSD-style license (`examples/samples/LICENSE-FTC-SDK`). Field
+layout from the BIOBUZZ presented by RTX Competition Manual (FIRST Tech Challenge 2026–27).
+Libraries: ODE4j (BSD/LGPL), Javalin and Gson (Apache 2.0), Three.js (MIT).
