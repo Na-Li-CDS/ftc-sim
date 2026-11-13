@@ -7,8 +7,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A newer commit on a pull request cancels the older run. Pushes to main always run to the end:
+# a cancelled run would show as "failing" on the README badge.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: true
 
 permissions:
