@@ -1,5 +1,9 @@
 # FTC Simulator
 
+[![Windows](https://github.com/leelening/ftc-sim/actions/workflows/windows.yml/badge.svg?branch=main)](https://github.com/leelening/ftc-sim/actions/workflows/windows.yml)
+[![Ubuntu](https://github.com/leelening/ftc-sim/actions/workflows/ubuntu.yml/badge.svg?branch=main)](https://github.com/leelening/ftc-sim/actions/workflows/ubuntu.yml)
+[![macOS](https://github.com/leelening/ftc-sim/actions/workflows/macos.yml/badge.svg?branch=main)](https://github.com/leelening/ftc-sim/actions/workflows/macos.yml)
+
 Run your real FTC robot code (the `TeamCode` in your FtcRobotController project) against a
 simulated robot on the **BIOBUZZ** (2026–27) field. Drive it from a browser Driver Station with
 an Xbox/PlayStation controller or the keyboard. When it works in the simulator, deploy the
@@ -148,11 +152,13 @@ The suite includes:
   end. For example, `RobotAutoDriveByGyro_Linear` returns to within about 10 cm of its start, and
   the Pinpoint auto to within 0.2 in.
 
-On GitHub, [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs these tests on Windows,
-Ubuntu and macOS (JDK 21, plus JDK 17 on Ubuntu) for every push to `main`/`master` and every pull
-request. On each OS it also starts the simulator with `run-sim.bat` or `run-sim.sh` against a
-robot project whose path contains spaces. It then checks that TeamCode compiles with no files
-skipped and that the Driver Station page loads.
+On GitHub, these tests run on Windows, Ubuntu and macOS (JDK 21, plus JDK 17 on Ubuntu) for every
+push to `main`/`master` and every pull request. Each OS has its own workflow (`windows.yml`,
+`ubuntu.yml`, `macos.yml`) and its own badge at the top of this page. All three call the same
+steps in [`.github/workflows/test.yml`](.github/workflows/test.yml). On each OS the simulator is
+also started with `run-sim.bat` or `run-sim.sh` against a robot project whose path contains
+spaces. The run then checks that TeamCode compiles with no files skipped and that the Driver
+Station page loads.
 
 ## Project layout
 

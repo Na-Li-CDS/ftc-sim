@@ -1,0 +1,27 @@
+# Status badge: Ubuntu. The steps are in test.yml.
+name: Ubuntu
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # The README promises JDK 17 or newer, so the oldest supported JDK is tested here too.
+        java: ['21', '17']
+    uses: ./.github/workflows/test.yml
+    with:
+      os: ubuntu-latest
+      java: ${{ matrix.java }}
