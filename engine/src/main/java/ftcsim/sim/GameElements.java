@@ -52,17 +52,22 @@ public final class GameElements {
         public final String kind;      // pollen, nectar
         public final String color;     // yellow, red, blue
         public final double radius;
+        final double mass;
+        /** 1/2 rho Cd A: air drag force = dragFactor * speed^2. */
+        final double dragFactor;
         final DBody body;
         final DGeom geom;
         State state = State.FREE;
         /** Where a STAGED ball sits (world frame). */
         final double[] stagedAt = new double[3];
 
-        Ball(int id, String kind, String color, double radius, DBody body, DGeom geom) {
+        Ball(int id, String kind, String color, double radius, double mass, DBody body, DGeom geom) {
             this.id = id;
             this.kind = kind;
             this.color = color;
             this.radius = radius;
+            this.mass = mass;
+            this.dragFactor = 0.5 * AIR_DENSITY * DRAG_COEFFICIENT * Math.PI * radius * radius;
             this.body = body;
             this.geom = geom;
         }
@@ -80,6 +85,12 @@ public final class GameElements {
         }
     }
 
+    // In the air: quadratic drag. POLLEN and NECTAR are perforated plastic balls; Cd ~0.5 is an estimate.
+    private static final double AIR_DENSITY = 1.2;               // kg/m^3
+    private static final double DRAG_COEFFICIENT = 0.5;
+    // On the foam tiles: rolling resistance, a force of ROLLING_RESISTANCE * m * g against the motion.
+    private static final double ROLLING_RESISTANCE = 0.04;
+    private static final double GRAVITY = 9.81;
     // Intake: a ball is pulled in when its center is in this box in front of the roller (robot frame).
     private static final double INTAKE_REACH_M = 0.07;
     private static final double INTAKE_MIN_OMEGA = 20;          // rad/s at the intake motor
@@ -148,8 +159,9 @@ public final class GameElements {
         double i = 2.0 / 3.0 * mass * r * r;
         m.setParameters(mass, 0, 0, 0, i, i, i, 0, 0, 0);
         body.setMass(m);
-        // Foam tiles and the soft shell soak up rolling: balls coast to a stop in a few seconds.
-        body.setLinearDamping(0.0008);
+        // No velocity damping: it would also slow balls in flight. Air drag and rolling resistance
+        // are applied as forces in applyAirAndRolling(); only spin decays here.
+        body.setLinearDamping(0);
         body.setAngularDamping(0.0015);
         body.setAutoDisableFlag(true);
         body.setAutoDisableLinearThreshold(0.003);
@@ -160,7 +172,7 @@ public final class GameElements {
         PhysicsWorld.Material mat = new PhysicsWorld.Material("ball");
         mat.mu = mat.mu2 = 0.6;
         mat.bounce = 0.35;
-        Ball b = new Ball(balls.size(), kind, color, r, body, geom);
+        Ball b = new Ball(balls.size(), kind, color, r, mass, body, geom);
         mat.owner = b;
         world.register(geom, mat, PhysicsWorld.CAT_BALL, PhysicsWorld.CAT_GROUND | PhysicsWorld.CAT_STATIC
                 | PhysicsWorld.CAT_CHASSIS | PhysicsWorld.CAT_WHEEL | PhysicsWorld.CAT_BALL);
@@ -189,15 +201,15 @@ public final class GameElements {
             else blue.add(b);
         }
         int p = 0;
-        // FLOWERS: 4 stacked in each, the lowest resting on the backstop above the retrieval opening.
+        // FLOWERS: 4 stacked in each. The lowest sits in the 2.79 in hole of the bottom ring, on the
+        // tiles (9.7); the others rest on top of it. (The 1.25 in backstop is the guide at the top.)
         JsonObject flowers = field.json.getAsJsonObject("flowers");
         for (String name : flowers.keySet()) {
             JsonObject f = flowers.getAsJsonObject(name);
             JsonArray axis = f.getAsJsonArray("axis_m");
-            double backstop = f.get("backstop_height_m").getAsDouble();
             for (int i = 0; i < 4; i++) {
                 Ball b = pollen.get(p++);
-                stage(b, axis.get(0).getAsDouble(), axis.get(1).getAsDouble(), backstop + b.radius + i * 2 * b.radius);
+                stage(b, axis.get(0).getAsDouble(), axis.get(1).getAsDouble(), b.radius + i * 2 * b.radius);
             }
         }
         // GARDENS: 4 in a row along the wall.
@@ -301,8 +313,29 @@ public final class GameElements {
     public void beforeStep(double dt) {
         sinceIntake += dt;
         sinceFeed += dt;
+        applyAirAndRolling();
         if (intake != null) runIntake();
         if (feeder != null && launcher != null) runFeeder();
+    }
+
+    /** Air drag on every moving free ball, plus rolling resistance while it is on the tiles. */
+    private void applyAirAndRolling() {
+        for (Ball b : balls) {
+            if (b.state != State.FREE || !b.body.isEnabled()) continue;
+            DVector3C v = b.body.getLinearVel();
+            double vx = v.get0(), vy = v.get1(), vz = v.get2();
+            double speed = Math.sqrt(vx * vx + vy * vy + vz * vz);
+            if (speed > 1e-4) {
+                double k = b.dragFactor * speed;
+                b.body.addForce(-k * vx, -k * vy, -k * vz);
+            }
+            double horizontal = Math.hypot(vx, vy);
+            if (b.body.getPosition().get2() < b.radius + 0.003 && horizontal > 1e-4) {
+                // Full force above 2 cm/s, fading to zero below so a ball comes to rest without jitter.
+                double k = ROLLING_RESISTANCE * b.mass * GRAVITY / Math.max(horizontal, 0.02);
+                b.body.addForce(-k * vx, -k * vy, 0);
+            }
+        }
     }
 
     private void runIntake() {

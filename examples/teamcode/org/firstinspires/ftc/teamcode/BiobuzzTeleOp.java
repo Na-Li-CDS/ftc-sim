@@ -33,7 +33,9 @@ import com.qualcomm.robotcore.util.Range;
 @TeleOp(name = "BIOBUZZ TeleOp", group = "Examples")
 public class BiobuzzTeleOp extends OpMode {
 
-    static final double LAUNCHER_TICKS_PER_SECOND = 2000;   // goBILDA 6000 RPM motor: 28 ticks/rev
+    // goBILDA 6000 RPM motor (28 ticks/rev) on a 96 mm wheel: about 6.5 m/s out of the hood, an arc
+    // that peaks near HIVE CELL height (~1.6 m) and lands about 3.5 m away. Tune on your robot.
+    static final double LAUNCHER_TICKS_PER_SECOND = 1200;
     static final double HOOD_STEP = 0.05;
 
     private DcMotor frontLeft, frontRight, backLeft, backRight, intake;

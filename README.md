@@ -130,7 +130,8 @@ are wrong in the same way they would be on the robot.
   as Competition Manual section 10.3.1 sets them up: 4 POLLEN in each FLOWER, 4 in each GARDEN and
   4 pre-loaded in your robot; the three absent robots' pre-loads sit in the middle of their LOADING
   ZONE against the wall; 3 NECTAR in each upward-facing CELL and 5 in each ALLIANCE AREA. Loose
-  balls roll and bounce, and the robot pushes them. A robot with an `intake` role picks up balls
+  balls roll and bounce, slow down with air drag in flight and rolling resistance on the tiles,
+  and the robot pushes them. A robot with an `intake` role picks up balls
   in front of its roller (reverse it to spit one out) and holds at most 4 (rule G407); a `feeder`
   then sends them into the `launcher`, which throws them at about half the flywheel's surface
   speed, at an angle set by the `hood` servo. Balls in FLOWERS, CELLS and ALLIANCE AREAS stay put
@@ -160,8 +161,9 @@ The suite includes:
 - `DrivetrainPhysicsTest`, `RestDriftTest`: speed, strafing, turning, RUN_TO_POSITION, wall
   contact, no drift at rest.
 - `SampleOpModesTest`, `ExampleOpModesTest`: the official samples and the examples run end to
-  end. For example, `RobotAutoDriveByGyro_Linear` returns to within about 10 cm of its start, and
-  the Pinpoint auto to within 0.2 in.
+  end. For example, `RobotAutoDriveByGyro_Linear` returns to within about 10 cm of its start, the
+  Pinpoint auto to within 0.2 in, and the BIOBUZZ TeleOp's shots peak at HIVE CELL height
+  (1.4–1.9 m).
 
 On GitHub, these tests run on Windows, Ubuntu and macOS (JDK 21, plus JDK 17 on Ubuntu) for every
 push to `main`/`master` and every pull request. Each OS has its own workflow (`windows.yml`,

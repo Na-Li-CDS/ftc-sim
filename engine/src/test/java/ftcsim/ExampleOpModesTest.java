@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import ftcsim.physics.FieldModel;
 import ftcsim.runner.TeamCodeCompiler;
+import ftcsim.sim.GameElements;
 import ftcsim.sim.Simulator;
 
 /** Runs the bundled example TeamCode on the default mecanum robot. */
@@ -81,8 +83,10 @@ class ExampleOpModesTest {
     }
 
     @Test
-    void launcherSpinsUpAndRumbles() throws Exception {
+    void launcherSpinsUpRumblesAndShootsToHiveHeight() throws Exception {
         Simulator sim = start();
+        // A clear lane: facing the rear wall, left of the HIVE frame.
+        sim.handle("{\"type\":\"place\",\"x\":-1.2,\"y\":-1.5,\"h\":90}");
         sim.handle("{\"type\":\"init\",\"opmode\":\"BIOBUZZ TeleOp\"}");
         waitFor(sim, Simulator.DsState.INIT, 2000);
         sim.handle("{\"type\":\"start\"}");
@@ -93,9 +97,37 @@ class ExampleOpModesTest {
         sim.handle(buttons(-1));
         Thread.sleep(4500);
         double tps = sim.rig().motors.get("launcher").port.velocityTicksPerSecond;
-        System.out.printf("launcher: %.0f ticks/s after 4.5 s (target 2000)%n", tps);
-        assertEquals(2000, tps, 60);
+        System.out.printf("launcher: %.0f ticks/s after 4.5 s (target 1200)%n", tps);
+        assertEquals(1200, tps, 40);
         assertTrue(messages.stream().anyMatch(m -> m.contains("\"type\":\"rumble\"")), "rumble sent to the controller");
+
+        // RB feeds the 4 pre-loaded POLLEN. Follow them until they land.
+        List<GameElements.Ball> preload = new ArrayList<>();
+        sim.onPhysicsThread(() -> sim.elements().balls().stream()
+                .filter(b -> b.state() == GameElements.State.HELD).forEach(preload::add));
+        assertEquals(4, preload.size());
+        double startY = sim.rig().body.position().get1();
+        sim.handle(buttons(5));
+        double[] apex = new double[preload.size()], apexAt = new double[preload.size()];
+        long until = System.currentTimeMillis() + 3500;
+        while (System.currentTimeMillis() < until) {
+            sim.onPhysicsThread(() -> {
+                for (int i = 0; i < preload.size(); i++) {
+                    GameElements.Ball b = preload.get(i);
+                    if (b.state() != GameElements.State.FREE || b.position().get2() <= apex[i]) continue;
+                    apex[i] = b.position().get2();
+                    apexAt[i] = b.position().get1() - startY;
+                }
+            });
+            Thread.sleep(5);
+        }
+        sim.handle(buttons(-1));
+        for (int i = 0; i < preload.size(); i++) {
+            System.out.printf("shot %d: apex %.2f m high, %.2f m out%n", i + 1, apex[i], apexAt[i]);
+            // HIVE CELL openings are 1.36-1.67 m above the tiles (Competition Manual 9.6.2).
+            assertTrue(apex[i] > 1.4 && apex[i] < 1.9, "shot " + (i + 1) + " peaks near HIVE CELL height: " + apex[i]);
+            assertTrue(apexAt[i] > 1.2 && apexAt[i] < 2.2, "shot " + (i + 1) + " peaks within the field: " + apexAt[i]);
+        }
         sim.handle("{\"type\":\"stop\"}");
         waitFor(sim, Simulator.DsState.IDLE, 3000);
         assertNull(sim.lastError());
