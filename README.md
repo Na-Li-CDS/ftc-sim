@@ -14,7 +14,9 @@ same code to the robot as usual. Nothing in TeamCode changes.
 ## Quick start
 
 1. Install a JDK 17 or newer (Android Studio's bundled JDK works, or [Temurin](https://adoptium.net)).
-   `run-sim.bat` also finds a JDK unpacked in `%USERPROFILE%\.jdks`.
+   `run-sim.bat` also finds a JDK unpacked in `%USERPROFILE%\.jdks`, and `run-sim.sh` one in
+   `~/.jdks` (on macOS, including the `Contents/Home` layout, even when macOS's placeholder
+   `javac` says "Unable to locate a Java Runtime").
 2. Start the simulator with your robot project:
 
    ```bat
@@ -25,8 +27,8 @@ same code to the robot as usual. Nothing in TeamCode changes.
    runs the bundled examples and the official FTC samples.
 3. Your browser opens at <http://localhost:8080>. Pick an OpMode, press **INIT**, then **▶ START**.
 
-To avoid typing the path every time, copy `sim.properties.example` to `sim.properties` and set
-`project=`.
+Defaults live in `sim.properties` (`sim.properties.example` is the template). In this repository it
+selects `robots/my-robot.json`; set `project=` there to avoid typing the path every time.
 
 ## The edit → simulate → robot loop
 
@@ -66,6 +68,10 @@ operating system. The Xbox Guide button may be taken by the Windows Game Bar.
 
 With one controller, set **Gamepad 2 → Keyboard** to try two-driver code.
 
+**Human player:** press **N** (red) or **M** (blue), or the *+ Red NECTAR* / *+ Blue NECTAR*
+buttons above the 3D view, to put one NECTAR into that alliance's LOADING ZONE (5 per color until
+*Reset*).
+
 **The example BIOBUZZ TeleOp** (`examples/teamcode`, default robot):
 
 | Control | Does |
@@ -78,6 +84,13 @@ With one controller, set **Gamepad 2 → Keyboard** to try two-driver code.
 | Y (`I`) | launcher on/off; the controller rumbles when it is up to speed |
 | RB (`E`) | shoot (only once the launcher is up to speed) |
 | d-pad up/down (`T` / `G`) | raise / lower the hood |
+| d-pad left/right (`F` / `H`) | launcher speed down / up, 100 ticks/s per press (400 to 2600, starts at 1200) |
+
+**The example BIOBUZZ Parking** autonomous (`examples/teamcode`, `robots/my-robot.json`): starts
+with its back against the audience wall, facing into the open end of the red HIVE's audience
+CELL, then drives around the A-frame and the red FLOWER and backs into the red LOADING ZONE,
+using Pinpoint field coordinates (`pinpoint.setPosition` at START). It takes about 7 seconds and
+then preselects BIOBUZZ TeleOp.
 
 ## The Driver Station panel
 
@@ -104,6 +117,9 @@ looks devices up by those names.
   sample names `front_left_drive` …, plus `imu`, `pinpoint`, `sensor_otos`, `sensor_distance`,
   `sensor_color`, `sensor_touch`, `digitalTouch`, and a BIOBUZZ-style `intake`, `launcher`
   (flywheel), `hood` servo and `feeder` CR servo.
+- `robots/my-robot.json`: the same mecanum robot, starting with its back against the audience
+  wall and facing into the red HIVE's audience CELL (`"start": [-0.3239, -1.5964, 90]`). It is
+  the default here through `sim.properties`; the tests keep using `robots/mecanum.json`.
 - `robots/tank.json`: six-wheel drop-center tank with `left_drive` / `right_drive`, an arm
   (`left_arm`, also `arm`) and claw servos (`left_hand`, `right_hand`), for the classic samples.
 
