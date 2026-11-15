@@ -66,6 +66,19 @@ operating system. The Xbox Guide button may be taken by the Windows Game Bar.
 
 With one controller, set **Gamepad 2 → Keyboard** to try two-driver code.
 
+**The example BIOBUZZ TeleOp** (`examples/teamcode`, default robot):
+
+| Control | Does |
+|---|---|
+| left stick | drive. Robot-centric: forward = toward the intake, whichever way the robot faces |
+| right stick X | turn |
+| BACK / View (`[`) | switch to field-centric and back (forward = away from the driver, whichever way the robot faces) |
+| A (`K`) | field-centric: make "away from the driver" the way the robot faces now |
+| RT / LT (`C` / `Z`) | intake in / out |
+| Y (`I`) | launcher on/off; the controller rumbles when it is up to speed |
+| RB (`E`) | shoot (only once the launcher is up to speed) |
+| d-pad up/down (`T` / `G`) | raise / lower the hood |
+
 ## The Driver Station panel
 
 - **OpMode list** with Autonomous and TeleOp groups. Tick *Samples* to show the FTC SDK samples,
@@ -126,14 +139,24 @@ are wrong in the same way they would be on the robot.
   orientation), goBILDA Pinpoint (its own odometry from your offsets, resolution and directions),
   SparkFun OTOS, REV 2m distance (raycast), REV Color Sensor V3 (tape and tiles under it), REV
   touch sensor / digital channel, and battery voltage.
+- **Game pieces**: the 40 yellow POLLEN (7.1 cm) and 8 red + 8 blue NECTAR (9.1 cm), staged
+  as Competition Manual section 10.3.1 sets them up: 4 POLLEN in each FLOWER, 4 in each GARDEN and
+  4 pre-loaded in your robot; the three absent robots' pre-loads sit in the middle of their LOADING
+  ZONE against the wall; 3 NECTAR in each upward-facing CELL and 5 in each ALLIANCE AREA. Loose
+  balls roll and bounce, slow down with air drag in flight and rolling resistance on the tiles,
+  and the robot pushes them. A robot with an `intake` role picks up balls
+  in front of its roller (reverse it to spit one out) and holds at most 4 (rule G407); a `feeder`
+  then sends them into the `launcher`, which throws them at about half the flywheel's surface
+  speed, at an angle set by the `hood` servo. Balls in FLOWERS, CELLS and ALLIANCE AREAS stay put
+  (those holders are not modeled as containers yet). *Reset* also resets the game pieces.
 - **OpMode lifecycle**: iterative and linear OpModes, `waitForStart`, `opModeInInit`,
   `isStopRequested`, thread interruption on STOP, `requestOpModeStop`, `terminateOpModeNow`,
   `OpMode.blackboard`. When an OpMode ends, motors stop and servos go limp.
 - **Loop timing**: hardware calls take about as long as on a real Control Hub, so control-loop
   tuning carries over.
 
-**Not simulated yet**: VisionPortal / AprilTag / color-blob processing, game pieces and scoring,
-the HIVE tipping, LEDs and sounds, Limelight, OctoQuad, legacy BNO055 / Modern Robotics sensors.
+**Not simulated yet**: VisionPortal / AprilTag / color-blob processing, scoring, taking POLLEN
+out of a FLOWER, human-player NECTAR, the HIVE tipping, LEDs and sounds, Limelight, OctoQuad, legacy BNO055 / Modern Robotics sensors.
 OpModes that use them are skipped at build time with the reason.
 
 ## Checking the simulator itself
@@ -146,11 +169,14 @@ The suite includes:
 
 - `ApiConformanceTest`: the simulator's SDK must be a subset of the official FTC SDK 12.0. It
   downloads the official jars from Maven Central.
+- `GameElementsTest`: POLLEN and NECTAR counts and staging per section 10.3.1, balls at rest,
+  pushing, intake (4-ball limit) and launching.
 - `DrivetrainPhysicsTest`, `RestDriftTest`: speed, strafing, turning, RUN_TO_POSITION, wall
   contact, no drift at rest.
 - `SampleOpModesTest`, `ExampleOpModesTest`: the official samples and the examples run end to
-  end. For example, `RobotAutoDriveByGyro_Linear` returns to within about 10 cm of its start, and
-  the Pinpoint auto to within 0.2 in.
+  end. For example, `RobotAutoDriveByGyro_Linear` returns to within about 10 cm of its start, the
+  Pinpoint auto to within 0.2 in, and the BIOBUZZ TeleOp's shots peak at HIVE CELL height
+  (1.4–1.9 m).
 
 On GitHub, these tests run on Windows, Ubuntu and macOS (JDK 21, plus JDK 17 on Ubuntu) for every
 push to `main`/`master` and every pull request. Each OS has its own workflow (`windows.yml`,

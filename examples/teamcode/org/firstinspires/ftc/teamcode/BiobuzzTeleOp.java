@@ -22,9 +22,11 @@ import com.qualcomm.robotcore.util.Range;
  * the FTC SDK, so it runs unchanged on a real robot whose configuration uses the same names.
  *
  * Xbox controller (gamepad1):
- *   left stick      drive (field-centric; hold LB for robot-centric)
+ *   left stick      drive. Robot-centric: forward = toward the intake, whichever way the robot faces.
  *   right stick X   turn
- *   A               reset the IMU heading (point the robot away from you first)
+ *   BACK (View)     switch to field-centric and back. Field-centric: forward = away from the
+ *                   driver, whichever way the robot faces.
+ *   A               field-centric: "away from the driver" = the way the robot faces now
  *   RT / LT         intake in / out
  *   Y               launcher on/off (rumbles when it reaches speed)
  *   RB              feed into the launcher
@@ -33,7 +35,11 @@ import com.qualcomm.robotcore.util.Range;
 @TeleOp(name = "BIOBUZZ TeleOp", group = "Examples")
 public class BiobuzzTeleOp extends OpMode {
 
-    static final double LAUNCHER_TICKS_PER_SECOND = 2000;   // goBILDA 6000 RPM motor: 28 ticks/rev
+    // goBILDA 6000 RPM motor (28 ticks/rev) on a 96 mm wheel: about 6.5 m/s out of the hood, an arc
+    // that peaks near HIVE CELL height (~1.6 m) and lands about 3.5 m away. Tune on your robot.
+    static final double LAUNCHER_TICKS_PER_SECOND = 1200;
+    static final double LAUNCHER_P = 50;
+    static final double LAUNCHER_F = 32767.0 / 3000;
     static final double HOOD_STEP = 0.05;
 
     private DcMotor frontLeft, frontRight, backLeft, backRight, intake;
@@ -47,6 +53,7 @@ public class BiobuzzTeleOp extends OpMode {
     private boolean launcherOn = false;
     private boolean launcherWasReady = false;
     private double hoodPosition = 0.5;
+    private boolean fieldCentric = false;
 
     @Override
     public void init() {
@@ -68,6 +75,11 @@ public class BiobuzzTeleOp extends OpMode {
         launcher = hardwareMap.get(DcMotorEx.class, "launcher");
         launcher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         launcher.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        // Flywheel velocity PIDF. The hub's default (P 10, I 3, F from the motor's rated speed)
+        // overshoots by about 30% and needs ~4 s to settle, so the launcher keeps dropping out of
+        // READY. Tune it like most teams do: F = 32767 / (ticks/s at full power, about 3000 here),
+        // P to hold the speed, and no I.
+        launcher.setVelocityPIDFCoefficients(LAUNCHER_P, 0, 0, LAUNCHER_F);
         hood = hardwareMap.get(Servo.class, "hood");
         feeder = hardwareMap.get(CRServo.class, "feeder");
 
@@ -91,11 +103,13 @@ public class BiobuzzTeleOp extends OpMode {
         pinpoint.update();
 
         // ---- drive ----
+        if (gamepad1.backWasPressed()) fieldCentric = !fieldCentric;
         if (gamepad1.aWasPressed()) imu.resetYaw();
         double forward = -gamepad1.left_stick_y;
         double right = gamepad1.left_stick_x;
         double turn = gamepad1.right_stick_x;
-        if (!gamepad1.left_bumper) {
+        if (fieldCentric) {
+            // Rotate the stick by -heading so "forward" stays away from the driver.
             double heading = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
             double rotX = right * Math.cos(-heading) - forward * Math.sin(-heading);
             double rotY = right * Math.sin(-heading) + forward * Math.cos(-heading);
@@ -130,12 +144,15 @@ public class BiobuzzTeleOp extends OpMode {
         feeder.setPower(gamepad1.right_bumper && ready ? 1.0 : 0.0);
 
         // ---- telemetry ----
-        telemetry.addData("Drive", gamepad1.left_bumper ? "robot-centric" : "field-centric");
+        telemetry.addData("Drive", fieldCentric ? "field-centric (BACK: robot-centric)" : "robot-centric (BACK: field-centric)");
         telemetry.addData("Heading (IMU)", "%.1f°", imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES));
         telemetry.addData("Pinpoint", "x %.1f in  y %.1f in  h %.1f°",
                 pinpoint.getPosX(DistanceUnit.INCH), pinpoint.getPosY(DistanceUnit.INCH), pinpoint.getHeading(AngleUnit.DEGREES));
         telemetry.addData("Launcher", "%s  %.0f / %.0f ticks/s %s", launcherOn ? "ON " : "off", speed,
                 LAUNCHER_TICKS_PER_SECOND, ready ? "READY" : "");
+        if (gamepad1.right_bumper && !ready) {
+            telemetry.addLine(launcherOn ? "Feeding waits for the launcher to reach speed" : "Press Y to start the launcher, then RB");
+        }
         telemetry.addData("Hood", "%.2f", hoodPosition);
         telemetry.addData("Intake", "%.2f", intake.getPower());
     }

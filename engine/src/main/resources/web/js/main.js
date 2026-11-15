@@ -46,6 +46,7 @@ function onMessage(msg) {
     case 'hello': {
       view.setField(msg.field);
       view.setRobot(msg.robot, msg.wheels, msg.wheelRadius, msg.chassisZ);
+      view.setBalls(msg.balls);
       $('project').textContent = msg.project;
       $('project').title = `TeamCode: ${msg.project}`;
       const sel = $('robotSelect');
