@@ -66,6 +66,19 @@ operating system. The Xbox Guide button may be taken by the Windows Game Bar.
 
 With one controller, set **Gamepad 2 → Keyboard** to try two-driver code.
 
+**The example BIOBUZZ TeleOp** (`examples/teamcode`, default robot):
+
+| Control | Does |
+|---|---|
+| left stick | drive. Robot-centric: forward = toward the intake, whichever way the robot faces |
+| right stick X | turn |
+| BACK / View (`[`) | switch to field-centric and back (forward = away from the driver, whichever way the robot faces) |
+| A (`K`) | field-centric: make "away from the driver" the way the robot faces now |
+| RT / LT (`C` / `Z`) | intake in / out |
+| Y (`I`) | launcher on/off; the controller rumbles when it is up to speed |
+| RB (`E`) | shoot (only once the launcher is up to speed) |
+| d-pad up/down (`T` / `G`) | raise / lower the hood |
+
 ## The Driver Station panel
 
 - **OpMode list** with Autonomous and TeleOp groups. Tick *Samples* to show the FTC SDK samples,
