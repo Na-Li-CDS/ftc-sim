@@ -31,13 +31,18 @@ import com.qualcomm.robotcore.util.Range;
  *   Y               launcher on/off (rumbles when it reaches speed)
  *   RB              feed into the launcher
  *   d-pad up/down   raise/lower the hood
+ *   d-pad left/right  launcher speed down/up (steps of 100 ticks/s)
  */
 @TeleOp(name = "BIOBUZZ TeleOp", group = "Examples")
 public class BiobuzzTeleOp extends OpMode {
 
     // goBILDA 6000 RPM motor (28 ticks/rev) on a 96 mm wheel: about 6.5 m/s out of the hood, an arc
     // that peaks near HIVE CELL height (~1.6 m) and lands about 3.5 m away. Tune on your robot.
+    // Starting speed; d-pad left/right changes it while driving.
     static final double LAUNCHER_TICKS_PER_SECOND = 1200;
+    static final double LAUNCHER_SPEED_STEP = 100;
+    static final double LAUNCHER_MIN_SPEED = 400;
+    static final double LAUNCHER_MAX_SPEED = 2600;   // the motor tops out near 2800 ticks/s
     static final double LAUNCHER_P = 50;
     static final double LAUNCHER_F = 32767.0 / 3000;
     static final double HOOD_STEP = 0.05;
@@ -53,6 +58,7 @@ public class BiobuzzTeleOp extends OpMode {
     private boolean launcherOn = false;
     private boolean launcherWasReady = false;
     private double hoodPosition = 0.5;
+    private double launcherTarget = LAUNCHER_TICKS_PER_SECOND;
     private boolean fieldCentric = false;
 
     @Override
@@ -131,9 +137,12 @@ public class BiobuzzTeleOp extends OpMode {
 
         // ---- launcher ----
         if (gamepad1.yWasPressed()) launcherOn = !launcherOn;
-        launcher.setVelocity(launcherOn ? LAUNCHER_TICKS_PER_SECOND : 0);
+        if (gamepad1.dpadRightWasPressed()) launcherTarget += LAUNCHER_SPEED_STEP;
+        if (gamepad1.dpadLeftWasPressed()) launcherTarget -= LAUNCHER_SPEED_STEP;
+        launcherTarget = Range.clip(launcherTarget, LAUNCHER_MIN_SPEED, LAUNCHER_MAX_SPEED);
+        launcher.setVelocity(launcherOn ? launcherTarget : 0);
         double speed = launcher.getVelocity();
-        boolean ready = launcherOn && Math.abs(speed - LAUNCHER_TICKS_PER_SECOND) < 0.03 * LAUNCHER_TICKS_PER_SECOND;
+        boolean ready = launcherOn && Math.abs(speed - launcherTarget) < 0.03 * launcherTarget;
         if (ready && !launcherWasReady) gamepad1.rumbleBlips(2);
         launcherWasReady = ready;
 
@@ -149,7 +158,7 @@ public class BiobuzzTeleOp extends OpMode {
         telemetry.addData("Pinpoint", "x %.1f in  y %.1f in  h %.1f°",
                 pinpoint.getPosX(DistanceUnit.INCH), pinpoint.getPosY(DistanceUnit.INCH), pinpoint.getHeading(AngleUnit.DEGREES));
         telemetry.addData("Launcher", "%s  %.0f / %.0f ticks/s %s", launcherOn ? "ON " : "off", speed,
-                LAUNCHER_TICKS_PER_SECOND, ready ? "READY" : "");
+                launcherTarget, ready ? "READY" : "");
         if (gamepad1.right_bumper && !ready) {
             telemetry.addLine(launcherOn ? "Feeding waits for the launcher to reach speed" : "Press Y to start the launcher, then RB");
         }
