@@ -42,6 +42,7 @@ import ftcsim.hal.SimHub;
 import ftcsim.hal.SimLog;
 import ftcsim.hal.SimTelemetry;
 import ftcsim.physics.FieldModel;
+import ftcsim.physics.HiveBody;
 import ftcsim.physics.Mechanism;
 import ftcsim.physics.PhysicsWorld;
 import ftcsim.physics.RobotBody;
@@ -325,6 +326,10 @@ public final class Simulator {
                 physicsTasks.add(() -> rig.place(clamp(x, field.half - 0.23), clamp(y, field.half - 0.23), h));
             }
             case "reset" -> resetRobot();
+            case "nectar" -> {
+                String color = msg.get("color").getAsString();
+                if ("red".equals(color) || "blue".equals(color)) physicsTasks.add(() -> elements.introduceNectar(color));
+            }
             case "robot" -> switchRobot(msg.get("file").getAsString());
             case "clearError" -> {
                 synchronized (lock) {
@@ -745,6 +750,13 @@ public final class Simulator {
         m.put("battery", r.batteryVolts());
         m.put("balls", e.positions());
         m.put("held", e.heldCount());
+        m.put("cells", e.cellCounts());
+        Map<String, Object> hives = new LinkedHashMap<>();
+        for (HiveBody h : r.world.hives) {
+            hives.put(h.start.alliance(), Map.of("phi", Math.round(h.angle() * 1e4) / 1e4, "tips", h.tips(), "up", h.upCell()));
+        }
+        m.put("hives", hives);
+        m.put("nectarWaiting", Map.of("red", e.waitingNectar("red"), "blue", e.waitingNectar("blue")));
         output.broadcastState(gson.toJson(m));
     }
 

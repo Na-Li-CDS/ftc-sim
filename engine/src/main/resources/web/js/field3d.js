@@ -79,6 +79,7 @@ export class FieldView {
 
   setField(field) {
     this.fieldGroup.clear();
+    this.hivePivots = {};
     this.field = field;
     const half = field.field_m[0] / 2;
     this.half = half;
@@ -206,6 +207,7 @@ export class FieldView {
     pivot.position.set(...hive.pivot_m);
     pivot.rotation.x = hive.stops_rad[`${hive.start_up}_up`];
     this.fieldGroup.add(pivot);
+    this.hivePivots[alliance] = pivot;   // turned by updateState as the HIVE tips
 
     const hw = cells.half_width_m, f = cells.floor_z_m, wall = cells.wall_height_m, peak = cells.peak_height_m;
     const depth = cells.along_arm_m[1] - cells.along_arm_m[0];
@@ -469,6 +471,12 @@ export class FieldView {
   }
 
   updateState(s) {
+    if (s.hives && this.hivePivots) {
+      for (const [alliance, h] of Object.entries(s.hives)) {
+        const pivot = this.hivePivots[alliance];
+        if (pivot) pivot.rotation.x = h.phi;
+      }
+    }
     const r = this.robot;
     if (!r) return;
     r.group.position.set(s.p[0], s.p[1], s.p[2]);

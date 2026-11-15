@@ -129,7 +129,7 @@ are wrong in the same way they would be on the robot.
   is a chassis plus one body per wheel. Each mecanum wheel grips only along its roller axis, which
   is the standard way Gazebo models mecanum wheels, so strafing, wheel slip and pushing against
   walls behave physically. The robot collides with the walls, the HIVE structure's A-frames and
-  the FLOWERS.
+  the FLOWERS. Balls also hit the A-frame legs, the axle, the sign board and both HIVES' CELLS.
 - **Motors** follow their torque-speed curve, sag the battery under load, and BRAKE/FLOAT
   correctly. The **hub firmware** implements `RUN_WITHOUT_ENCODER`, `RUN_USING_ENCODER`
   (velocity PIDF), `RUN_TO_POSITION`, `STOP_AND_RESET_ENCODER`, `setVelocity`, PIDF tuning,
@@ -147,8 +147,25 @@ are wrong in the same way they would be on the robot.
   and the robot pushes them. A robot with an `intake` role picks up balls
   in front of its roller (reverse it to spit one out) and holds at most 4 (rule G407); a `feeder`
   then sends them into the `launcher`, which throws them at about half the flywheel's surface
-  speed, at an angle set by the `hood` servo. Balls in FLOWERS, CELLS and ALLIANCE AREAS stay put
-  (those holders are not modeled as containers yet). *Reset* also resets the game pieces.
+  speed, at an angle set by the `hood` servo.
+- **HIVES** are solid seesaws. Each CELL has a floor, side walls and a peaked roof, is closed at
+  the end next to the pivot and open at the outer end. A ball that goes in through the open end of
+  an upward-facing CELL rolls to the back and stays; one that lands on the roof bounces off; one
+  in a downward-facing CELL rolls out. Each HIVE turns on its pivot between stops at +-30 degrees
+  and is bi-stable like the real one: it holds its position until enough weight lands in the
+  upward-facing CELL, then tips (slowed by a damper) and dumps what was in that CELL. It is
+  calibrated to the Event Field Setup Guide, section 12.3: a POLLEN tossed onto 3 NECTAR + 1 POLLEN
+  or onto 6 POLLEN does not tip it, one tossed onto 3 NECTAR + 2 POLLEN or onto 7 POLLEN does. With
+  the 3 starting NECTAR, 2 POLLEN launched by the robot do not tip it and a 3rd does.
+  Just over the tipping point it starts slowly: the HIVE can creep for a few seconds before it
+  swings over. The
+  top bar shows how many balls are in each HIVE's CELLS (audience / rear) and how many times it
+  has tipped. That is not a MATCH score. Balls in FLOWERS and ALLIANCE AREAS stay put (those
+  holders are not modeled as containers yet). *Reset* also resets the HIVES and the game pieces.
+- **Human player NECTAR**: press **N** (red) or **M** (blue), or the *+ Red NECTAR* / *+ Blue
+  NECTAR* buttons, to put one NECTAR from that ALLIANCE AREA into its LOADING ZONE, at rest at
+  the first free spot along the alliance wall. Each button shows how many are left (5 per color
+  until *Reset*). The robot can intake and launch NECTAR like POLLEN.
 - **OpMode lifecycle**: iterative and linear OpModes, `waitForStart`, `opModeInInit`,
   `isStopRequested`, thread interruption on STOP, `requestOpModeStop`, `terminateOpModeNow`,
   `OpMode.blackboard`. When an OpMode ends, motors stop and servos go limp.
@@ -156,7 +173,7 @@ are wrong in the same way they would be on the robot.
   tuning carries over.
 
 **Not simulated yet**: VisionPortal / AprilTag / color-blob processing, scoring, taking POLLEN
-out of a FLOWER, human-player NECTAR, the HIVE tipping, LEDs and sounds, Limelight, OctoQuad, legacy BNO055 / Modern Robotics sensors.
+out of a FLOWER, LEDs and sounds, Limelight, OctoQuad, legacy BNO055 / Modern Robotics sensors.
 OpModes that use them are skipped at build time with the reason.
 
 ## Checking the simulator itself
@@ -170,7 +187,11 @@ The suite includes:
 - `ApiConformanceTest`: the simulator's SDK must be a subset of the official FTC SDK 12.0. It
   downloads the official jars from Maven Central.
 - `GameElementsTest`: POLLEN and NECTAR counts and staging per section 10.3.1, balls at rest,
-  pushing, intake (4-ball limit) and launching.
+  pushing, intake (4-ball limit), launching, and the CELLS: NECTAR stays in the upward-facing
+  CELLS, a ball shot into the open end stays, a ball dropped on the roof bounces off, and a ball
+  in a downward-facing CELL rolls out.
+- `HiveTipTest`: the HIVE calibration table from the Event Field Setup Guide (section 12.3), with
+  balls gently placed or tossed in, and a tip dumping the CELL and turning the other CELL up.
 - `DrivetrainPhysicsTest`, `RestDriftTest`: speed, strafing, turning, RUN_TO_POSITION, wall
   contact, no drift at rest.
 - `SampleOpModesTest`, `ExampleOpModesTest`: the official samples and the examples run end to
