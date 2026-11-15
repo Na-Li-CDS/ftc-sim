@@ -5,9 +5,13 @@
 # Or put project=... and robot=... in sim.properties and just run sh run-sim.sh.
 cd "$(dirname "$0")" || exit 1
 
-if [ -z "$JAVA_HOME" ] && ! command -v javac >/dev/null 2>&1; then
-    for d in $(ls -d "$HOME"/.jdks/jdk-* 2>/dev/null | sort -r); do
-        if [ -x "$d/bin/javac" ]; then JAVA_HOME="$d"; export JAVA_HOME; break; fi
+# `javac -version` (not just `command -v javac`) because macOS ships a /usr/bin/javac stub
+# that exists even when no JDK is installed.
+if [ -z "$JAVA_HOME" ] && ! javac -version >/dev/null 2>&1; then
+    for d in $(ls -d "$HOME"/.jdks/* 2>/dev/null | sort -r); do
+        for h in "$d" "$d/Contents/Home"; do
+            if [ -x "$h/bin/javac" ]; then JAVA_HOME="$h"; export JAVA_HOME; break 2; fi
+        done
     done
 fi
 
