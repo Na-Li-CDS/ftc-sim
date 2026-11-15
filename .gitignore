@@ -3,8 +3,6 @@
 build/
 local.properties
 
-# Each person's simulator defaults (project path etc.); sim.properties.example is the template
-sim.properties
 
 # Java
 *.class
