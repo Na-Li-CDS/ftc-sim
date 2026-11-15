@@ -84,6 +84,8 @@ public final class Simulator {
 
     // physics (physics thread only, except construction)
     private volatile RobotRig rig;
+    /** POLLEN and NECTAR in the same physics world as {@link #rig}; swapped together with it. */
+    private volatile GameElements elements;
     private volatile Path robotFile;
     private final ConcurrentLinkedQueue<Runnable> physicsTasks = new ConcurrentLinkedQueue<>();
     private volatile boolean running = false;
@@ -122,6 +124,7 @@ public final class Simulator {
         this.projectLabel = projectLabel;
         this.robotFile = robotFile;
         this.rig = new RobotRig(RobotConfig.load(robotFile), new PhysicsWorld(field));
+        this.elements = new GameElements(field, rig);
         GamepadAccess.get().setUser(gamepad1, 1);
         GamepadAccess.get().setUser(gamepad2, 2);
         installListeners();
@@ -218,7 +221,9 @@ public final class Simulator {
             if (due - steps > 250) steps = due - 250;     // badly behind: let simulated time slip
             int n = 0;
             RobotRig r = rig;
+            GameElements e = elements;
             while (steps < due && n < 100) {
+                e.beforeStep(DT);
                 r.step(DT);
                 simTime += DT;
                 steps++;
@@ -232,7 +237,7 @@ public final class Simulator {
             }
             if (now - lastPublish >= 20_000_000L) {
                 lastPublish = now;
-                publishState(r, now);
+                publishState(r, e, now);
                 checkAutoTimer(now);
             }
             if (now - lastDevices >= 100_000_000L) {
@@ -550,6 +555,7 @@ public final class Simulator {
             RobotConfig c = rig.config;
             rig.powerCycle();
             rig.place(c.start[0], c.start[1], Math.toRadians(c.start[2]));
+            elements.restage();
         });
     }
 
@@ -567,7 +573,9 @@ public final class Simulator {
         physicsTasks.add(() -> {
             try {
                 RobotConfig cfg = RobotConfig.load(file);
-                rig = new RobotRig(cfg, new PhysicsWorld(field));
+                RobotRig next = new RobotRig(cfg, new PhysicsWorld(field));
+                elements = new GameElements(field, next);
+                rig = next;
                 robotFile = file;
                 output.broadcast(helloJson());
                 synchronized (lock) {
@@ -620,6 +628,7 @@ public final class Simulator {
         m.put("wheels", r.body.wheels.stream().map(w -> Map.of("key", w.key, "x", w.x, "y", w.y)).collect(Collectors.toList()));
         m.put("wheelRadius", r.body.wheelRadius);
         m.put("chassisZ", r.body.chassisRestZ());
+        m.put("balls", elements.describe());
         return gson.toJson(m);
     }
 
@@ -691,7 +700,7 @@ public final class Simulator {
         return gson.toJson(m);
     }
 
-    private void publishState(RobotRig r, long now) {
+    private void publishState(RobotRig r, GameElements e, long now) {
         SimTelemetry t;
         Map<String, Object> ds = new LinkedHashMap<>();
         synchronized (lock) {
@@ -734,6 +743,8 @@ public final class Simulator {
         m.put("mech", mech);
         m.put("ds", ds);
         m.put("battery", r.batteryVolts());
+        m.put("balls", e.positions());
+        m.put("held", e.heldCount());
         output.broadcastState(gson.toJson(m));
     }
 
@@ -806,6 +817,10 @@ public final class Simulator {
 
     public RobotRig rig() {
         return rig;
+    }
+
+    public GameElements elements() {
+        return elements;
     }
 
     /** Runs a task on the physics thread and waits for it. */

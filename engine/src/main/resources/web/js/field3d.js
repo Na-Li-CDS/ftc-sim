@@ -7,6 +7,9 @@ const COLORS = {
   aluminum: 0xb9c0c8, frame: 0x2b2f35, flower: 0x2fa84f, gold: 0xd9a52b,
 };
 
+// SCORING ELEMENTS: yellow POLLEN, red and blue NECTAR.
+const BALL_COLORS = { yellow: 0xf4d23c, red: 0xd8343a, blue: 0x2f6fe0 };
+
 const CAMERAS = {
   audience: { pos: [0, -4.5, 2.8], target: [0, -0.15, 0.25] },
   overhead: { pos: [0, -0.001, 6.4], target: [0, 0, 0] },
@@ -44,6 +47,9 @@ export class FieldView {
     this.fieldGroup = new THREE.Group();
     this.scene.add(this.fieldGroup);
     this.robot = null;
+    this.ballGroup = new THREE.Group();
+    this.scene.add(this.ballGroup);
+    this.balls = [];
     this.mode = 'audience';
     this.camTween = null;
     this.placing = null;
@@ -278,6 +284,26 @@ export class FieldView {
     this.fieldGroup.add(grp);
   }
 
+  // ---- scoring elements --------------------------------------------------------------------
+
+  /** One sphere per POLLEN / NECTAR, in the order the simulator streams their positions. */
+  setBalls(list) {
+    this.ballGroup.clear();
+    this.balls = [];
+    const geos = {};
+    const mats = {};
+    for (const b of list || []) {
+      const geo = geos[b.r] ??= new THREE.SphereGeometry(b.r, 20, 14);
+      const mat = mats[b.color] ??= new THREE.MeshStandardMaterial({ color: BALL_COLORS[b.color] ?? 0xffffff, roughness: 0.45 });
+      const m = new THREE.Mesh(geo, mat);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.visible = false;
+      this.ballGroup.add(m);
+      this.balls.push(m);
+    }
+  }
+
   // ---- robot -------------------------------------------------------------------------------
 
   setRobot(cfg, wheels, wheelRadius, chassisZ) {
@@ -451,6 +477,12 @@ export class FieldView {
     for (const [name, apply] of Object.entries(r.mech)) {
       const v = s.mech?.[name];
       if (typeof v === 'number') apply(v);
+    }
+    if (s.balls) {
+      for (let i = 0; i < this.balls.length && 3 * i + 2 < s.balls.length; i++) {
+        this.balls[i].position.set(s.balls[3 * i], s.balls[3 * i + 1], s.balls[3 * i + 2]);
+        this.balls[i].visible = true;
+      }
     }
     this.lastState = s;
   }

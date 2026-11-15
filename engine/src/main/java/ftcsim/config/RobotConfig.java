@@ -96,6 +96,8 @@ public final class RobotConfig {
         public double maxDeg = 1e9;
         public double startDeg = 0;
         public double maxExtensionM = 0.7;
+        /** Flywheel: wheel diameter, which sets how fast the launcher throws a ball. */
+        public double wheelDiameterM = 0.096;
     }
 
     public static final class Io {
