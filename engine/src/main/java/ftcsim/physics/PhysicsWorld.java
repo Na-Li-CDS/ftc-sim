@@ -23,13 +23,17 @@ import org.ode4j.ode.OdeHelper;
 
 /**
  * The rigid-body world (ODE4j): floor, perimeter walls, the HIVE structure (A-frames, axle, sign
- * board), the two HIVES on their pivots ({@link HiveBody}), the FLOWERS, plus whatever bodies are
- * added. Every method must be called on the physics thread.
+ * board), the two HIVES on their pivots ({@link HiveBody}), the FLOWERS (open tubes, as panels),
+ * plus whatever bodies are added. Every method must be called on the physics thread.
  */
 public final class PhysicsWorld {
 
     /** Collision categories. */
     public static final long CAT_GROUND = 1, CAT_STATIC = 2, CAT_CHASSIS = 4, CAT_WHEEL = 8, CAT_BALL = 16;
+    /** The intake roller: solid to balls only. */
+    public static final long CAT_ROLLER = 32;
+    /** Stops only the robot's chassis: keeps it from sliding under a FLOWER's rings. */
+    public static final long CAT_ROBOT_STOP = 64;
 
     /** How a geom behaves in contacts. */
     public static final class Material {
@@ -110,12 +114,19 @@ public final class PhysicsWorld {
             register(box, mat, CAT_STATIC, CAT_CHASSIS | CAT_WHEEL | CAT_BALL);
         }
         for (FieldModel.Hive hive : field.hives) hives.add(new HiveBody(this, hive, field.hivePanels));
-        for (FieldModel.Post p : field.posts) {
-            DGeom c = OdeHelper.createCylinder(space, p.radius(), p.height());
-            c.setPosition(p.cx(), p.cy(), p.height() / 2);
+        // A FLOWER's rings are thin, and a chassis taller than the Retrieval Opening could slide
+        // under them. On the field the FLOWER's frame stops the robot; this invisible post around
+        // each one (square, facing the field) does that here. It stops only the chassis: balls and the intake roller, low
+        // enough to reach into the Retrieval Opening, pass it.
+        for (FieldModel.Flower f : field.flowers) {
+            double z0 = 0.03, postLen = f.height() - z0, side = 2 * (f.innerRadius() + 0.008);
+            DGeom post = OdeHelper.createBox(space, side, side, postLen);   // square: box-box contacts are reliable
+            post.setPosition(f.x(), f.y(), z0 + postLen / 2);
+            double c = Math.cos(f.yaw()), sn = Math.sin(f.yaw());
+            post.setRotation(new DMatrix3(c, -sn, 0, sn, c, 0, 0, 0, 1));
             Material m = new Material("structure");
-            m.mu = m.mu2 = 0.3;
-            register(c, m, CAT_STATIC, CAT_CHASSIS | CAT_WHEEL | CAT_BALL);
+            m.mu = m.mu2 = 0.25;
+            register(post, m, CAT_ROBOT_STOP, CAT_CHASSIS);
         }
     }
 
@@ -235,7 +246,9 @@ public final class PhysicsWorld {
         c.surface.mode = OdeConstants.dContactApprox1 | OdeConstants.dContactBounce
                 | OdeConstants.dContactSoftCFM | OdeConstants.dContactSoftERP;
         c.surface.mu = Math.sqrt(m1.mu * m2.mu);
-        c.surface.bounce = Math.max(m1.bounce, m2.bounce);
+        // A ball meeting the intake roller doesn't bounce off it: the roller pushes it along.
+        boolean roller = "roller".equals(m1.kind) || "roller".equals(m2.kind);
+        c.surface.bounce = roller ? 0 : Math.max(m1.bounce, m2.bounce);
         c.surface.bounce_vel = 0.1;
         c.surface.soft_cfm = 1e-5;
         c.surface.soft_erp = 0.3;

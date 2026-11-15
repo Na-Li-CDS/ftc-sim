@@ -70,6 +70,10 @@ function onMessage(msg) {
       ds.setTimer(msg.ds);
       $('battery').textContent = `${msg.battery.toFixed(1)} V`;
       $('rtf').textContent = `${Math.round(msg.rtf * 100)}%`;
+      if (typeof msg.held === 'number') {
+        $('held').textContent = `${msg.held} / 4${msg.held >= 4 ? ' full' : ''}`;
+        $('held').classList.toggle('full', msg.held >= 4);
+      }
       if (msg.nectarWaiting) {
         for (const [color, btn, left] of [['red', 'nectarRedBtn', 'nectarRedLeft'], ['blue', 'nectarBlueBtn', 'nectarBlueLeft']]) {
           const n = msg.nectarWaiting[color] ?? 0;

@@ -19,6 +19,7 @@ import ftcsim.config.RobotConfig;
 import ftcsim.physics.FieldModel;
 import ftcsim.physics.Mechanism;
 import ftcsim.physics.PhysicsWorld;
+import ftcsim.physics.RobotBody;
 import ftcsim.physics.ServoUnit;
 
 /**
@@ -32,9 +33,7 @@ import ftcsim.physics.ServoUnit;
  *       robot and other balls, and can land in (or bounce off) a HIVE CELL.</li>
  *   <li>{@code HELD}: inside the robot (pre-load or picked up by the intake). It rides along and
  *       does not collide. At most {@link #ROBOT_CAPACITY} at once (rule G407).</li>
- *   <li>{@code STAGED}: parked where the field holds it and the simulator does not model the holder
- *       as a container: stacked in a FLOWER, or in the ALLIANCE AREA waiting for the human
- *       player.</li>
+ *   <li>{@code STAGED}: waiting off the field, in the ALLIANCE AREA for the human player.</li>
  * </ul>
  */
 public final class GameElements {
@@ -58,6 +57,9 @@ public final class GameElements {
         final DBody body;
         final DGeom geom;
         State state = State.FREE;
+        /** Rolling out of a FLOWER's Retrieval Opening: direction (radians) and time left, s. */
+        double flowerExitDir, flowerExitTime;
+        boolean flowerBounced;
         /** Where a STAGED ball sits (world frame). */
         final double[] stagedAt = new double[3];
 
@@ -89,10 +91,15 @@ public final class GameElements {
     private static final double AIR_DENSITY = 1.2;               // kg/m^3
     private static final double DRAG_COEFFICIENT = 0.5;
     // On the foam tiles: rolling resistance, a force of ROLLING_RESISTANCE * m * g against the motion.
-    private static final double ROLLING_RESISTANCE = 0.04;
+    // Perforated plastic balls on soft foam slow down quickly: a POLLEN rolling at 1 m/s stops in
+    // about 40 cm. (At 0.04 one bumped by a robot at full speed rolled about 5 m.)
+    private static final double ROLLING_RESISTANCE = 0.12;
     private static final double GRAVITY = 9.81;
-    // Intake: a ball is pulled in when its center is in this box in front of the roller (robot frame).
-    private static final double INTAKE_REACH_M = 0.07;
+    // Intake: the spinning roller pulls in a ball that touches it (within this gap of its surface),
+    // across most of the robot's width. The roller is solid (RobotBody), so balls in front of it get
+    // pushed until they touch; through a FLOWER's Retrieval Opening it reaches the bottom POLLEN,
+    // and each one above as it drops, but not balls higher up the tube.
+    private static final double INTAKE_REACH_M = 0.05;
     private static final double INTAKE_MIN_OMEGA = 20;          // rad/s at the intake motor
     private static final double INTAKE_INTERVAL_S = 0.12;
     // Feeder: one ball per interval while the feeder turns forward.
@@ -184,7 +191,8 @@ public final class GameElements {
     /**
      * Puts every SCORING ELEMENT where it starts a MATCH:
      * <ul>
-     *   <li>POLLEN: 4 in each FLOWER, 4 in each GARDEN, 4 pre-loaded in this robot. The other three
+     *   <li>POLLEN: 4 stacked in each FLOWER (free balls, held by its tube), 4 in each GARDEN, 4
+     *       pre-loaded in this robot. The other three
      *       ROBOTS are absent, so their pre-loads go in the center of their LOADING ZONE against
      *       the perimeter wall (10.3.4).</li>
      *   <li>NECTAR: 3 in each upward-facing CELL of its color (free balls, held by the CELL's
@@ -205,13 +213,10 @@ public final class GameElements {
         int p = 0;
         // FLOWERS: 4 stacked in each. The lowest sits in the 2.79 in hole of the bottom ring, on the
         // tiles (9.7); the others rest on top of it. (The 1.25 in backstop is the guide at the top.)
-        JsonObject flowers = field.json.getAsJsonObject("flowers");
-        for (String name : flowers.keySet()) {
-            JsonObject f = flowers.getAsJsonObject(name);
-            JsonArray axis = f.getAsJsonArray("axis_m");
+        for (FieldModel.Flower f : field.flowers) {
             for (int i = 0; i < 4; i++) {
                 Ball b = pollen.get(p++);
-                stage(b, axis.get(0).getAsDouble(), axis.get(1).getAsDouble(), b.radius + i * 2 * b.radius);
+                free(b, f.x(), f.y(), b.radius + i * (2 * b.radius + 0.001), 0, 0, 0);
             }
         }
         // GARDENS: 4 in a row along the wall.
@@ -285,6 +290,7 @@ public final class GameElements {
     }
 
     private void hold(Ball b) {
+        wakeNeighbors(b);
         b.state = State.HELD;
         b.body.setLinearVel(0, 0, 0);
         b.body.setAngularVel(0, 0, 0);
@@ -293,8 +299,24 @@ public final class GameElements {
         held.add(b);
     }
 
+    /**
+     * Wakes resting balls near this one before it leaves. The physics engine puts still balls to
+     * sleep and does not wake them when what they rest on disappears: without this, taking the
+     * bottom POLLEN out of a FLOWER would leave the stack above it floating.
+     */
+    private void wakeNeighbors(Ball b) {
+        DVector3C p = b.body.getPosition();
+        for (Ball o : balls) {
+            if (o == b || o.state != State.FREE || o.body.isEnabled()) continue;
+            DVector3C q = o.body.getPosition();
+            double dx = q.get0() - p.get0(), dy = q.get1() - p.get1(), dz = q.get2() - p.get2();
+            if (dx * dx + dy * dy + dz * dz < 0.5 * 0.5) o.body.enable();
+        }
+    }
+
     private void free(Ball b, double x, double y, double z, double vx, double vy, double vz) {
         b.state = State.FREE;
+        b.flowerBounced = false;
         b.body.setPosition(x, y, z);
         b.body.setLinearVel(vx, vy, vz);
         b.body.setAngularVel(0, 0, 0);
@@ -309,8 +331,66 @@ public final class GameElements {
         sinceIntake += dt;
         sinceFeed += dt;
         applyAirAndRolling();
+        bounceOutOfFlowers(dt);
         if (intake != null) runIntake();
         if (feeder != null && launcher != null) runFeeder();
+    }
+
+    // A POLLEN that drops out of a FLOWER's middle ring rolls out of the Retrieval Opening.
+    private static final double FLOWER_DROP_SPEED = 0.2;       // m/s downward: it is falling, not resting
+    private static final double FLOWER_ROLL_OUT_SPEED = 0.5;  // m/s
+    private static final double FLOWER_EXIT_TIME_S = 0.5;
+    private final java.util.Random bounceRandom = new java.util.Random(7);
+
+    /**
+     * On the field, when the bottom POLLEN of a FLOWER is taken or knocked out, the ones above drop
+     * through the tall Retrieval Opening and roll out on their own, so the whole stack comes out;
+     * only the weight of the stack keeps the bottom one in place at the start. Simulated POLLEN are
+     * perfect spheres and fall straight, so each lands back in the lower ring and the next one,
+     * falling right behind it, pins it there. Real ones are not quite round (Competition Manual
+     * 9.8), come off the middle ring at an angle and keep rolling: a POLLEN that falls clear of the
+     * middle ring rolls toward the open front or sides (never the wall) at a walking pace until it
+     * is out of the lower ring, even with the next one landing on it. One resting in place, like
+     * the bottom one at the start, does not move.
+     */
+    private void bounceOutOfFlowers(double dt) {
+        for (Ball b : balls) {
+            if (b.state != State.FREE || !b.body.isEnabled()) continue;
+            DVector3C p = b.body.getPosition(), v = b.body.getLinearVel();
+            FieldModel.Flower f = flowerHolding(p.get0(), p.get1(), 0.075);
+            if (f == null) {
+                b.flowerExitTime = 0;
+                b.flowerBounced = false;
+                continue;
+            }
+            double clear = f.retrievalTop() - b.radius;   // its top has left the middle ring
+            if (p.get2() > clear) {
+                b.flowerBounced = false;
+                continue;
+            }
+            if (!b.flowerBounced && v.get2() < -FLOWER_DROP_SPEED) {
+                b.flowerBounced = true;
+                b.flowerExitTime = FLOWER_EXIT_TIME_S;
+                b.flowerExitDir = f.yaw() + (bounceRandom.nextDouble() * 2 - 1) * Math.toRadians(100);   // front or sides
+            }
+            if (b.flowerExitTime > 0) {
+                b.flowerExitTime -= dt;
+                double cx = Math.cos(b.flowerExitDir), cy = Math.sin(b.flowerExitDir);
+                double along = v.get0() * cx + v.get1() * cy;
+                if (along < FLOWER_ROLL_OUT_SPEED) {
+                    double dv = FLOWER_ROLL_OUT_SPEED - along;
+                    b.body.setLinearVel(v.get0() + dv * cx, v.get1() + dv * cy, v.get2());
+                }
+            }
+        }
+    }
+
+    /** The FLOWER within this distance (m, horizontally) of the point, or null. */
+    private FieldModel.Flower flowerHolding(double x, double y, double within) {
+        for (FieldModel.Flower f : field.flowers) {
+            if (Math.hypot(x - f.x(), y - f.y()) < within) return f;
+        }
+        return null;
     }
 
     /** Air drag on every moving free ball, plus rolling resistance while it is on the tiles. */
@@ -337,16 +417,16 @@ public final class GameElements {
         double omega = intake.motorOmega();
         if (sinceIntake < INTAKE_INTERVAL_S || Math.abs(omega) < INTAKE_MIN_OMEGA) return;
         RobotConfig.Chassis c = rig.config.chassis;
-        double front = c.lengthM / 2 + 0.04;   // the roller, as drawn in the 3D view
+        double front = c.lengthM / 2 + RobotBody.ROLLER_AHEAD_M;   // the roller's axis
         if (omega > 0) {
             if (held.size() >= ROBOT_CAPACITY) return;
             for (Ball b : balls) {
                 if (b.state != State.FREE) continue;
                 DVector3 local = new DVector3();
                 rig.body.chassis.getPosRelPoint(b.body.getPosition(), local);
-                double heightAboveFloor = b.body.getPosition().get2();
-                if (local.get0() > c.lengthM / 2 - 0.02 && local.get0() < front + b.radius + INTAKE_REACH_M
-                        && Math.abs(local.get1()) < c.widthM * 0.41 && heightAboveFloor < 0.15) {
+                double dx = local.get0() - front, dz = b.body.getPosition().get2() - RobotBody.ROLLER_HEIGHT_M;
+                boolean touching = Math.hypot(dx, dz) < RobotBody.ROLLER_RADIUS_M + b.radius + INTAKE_REACH_M;
+                if (touching && local.get0() > c.lengthM / 2 - 0.02 && Math.abs(local.get1()) < c.widthM * 0.41) {
                     hold(b);
                     sinceIntake = 0;
                     return;
@@ -355,7 +435,7 @@ public final class GameElements {
         } else if (!held.isEmpty()) {
             // Reversed: spit the last ball in back out over the roller.
             Ball b = held.remove(held.size() - 1);
-            double x = front + b.radius + 0.03;
+            double x = front + RobotBody.ROLLER_RADIUS_M + b.radius + 0.01;   // just clear of the roller
             DVector3 p = rig.body.pointToWorld(x, 0, b.radius + 0.005);
             DVector3 v = rig.body.vectorToWorld(1.0, 0, 0);
             DVector3C rv = rig.body.chassis.getLinearVel();
@@ -390,6 +470,7 @@ public final class GameElements {
 
     /** Puts one ball at rest on the tiles at (x, y), out of the robot or its staging spot. */
     public void placeBall(Ball b, double x, double y) {
+        if (b.state == State.FREE) wakeNeighbors(b);
         held.remove(b);
         free(b, x, y, b.radius, 0, 0, 0);
     }
@@ -458,6 +539,7 @@ public final class GameElements {
      * For tests and experiments (e.g. checking a shot into a CELL without driving there).
      */
     public void throwBall(Ball b, double x, double y, double z, double vx, double vy, double vz) {
+        if (b.state == State.FREE) wakeNeighbors(b);
         held.remove(b);
         free(b, x, y, z, vx, vy, vz);
     }
@@ -480,6 +562,24 @@ public final class GameElements {
             if (cell != null) out.merge(cell, 1, Integer::sum);
         }
         return out;
+    }
+
+    /** Free balls inside each FLOWER, keyed by FLOWER name (flower_red, flower_rear...). */
+    public Map<String, Integer> flowerCounts() {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (FieldModel.Flower f : field.flowers) out.put(f.name(), 0);
+        for (Ball b : balls) {
+            String f = flowerOf(b);
+            if (f != null) out.merge(f, 1, Integer::sum);
+        }
+        return out;
+    }
+
+    /** The FLOWER a ball is in, or null. */
+    public String flowerOf(Ball b) {
+        if (b.state != State.FREE) return null;
+        DVector3C p = b.body.getPosition();
+        return field.flowerAt(p.get0(), p.get1(), p.get2());
     }
 
     /** The CELL a ball is in ("red audience"...), or null. */

@@ -71,6 +71,31 @@ public final class RobotBody {
     public final double wheelRadius;
     private final double chassisZ;
 
+    /** The intake roller's size and place, as the browser draws it: ahead of the chassis, near the tiles. */
+    public static final double ROLLER_RADIUS_M = 0.03, ROLLER_AHEAD_M = 0.04, ROLLER_HEIGHT_M = 0.045;
+
+    /**
+     * A robot with an "intake" device gets a roller across its front that is solid to balls, so it
+     * pushes and bumps them: it can knock the bottom POLLEN out of a FLOWER's Retrieval Opening even
+     * when the robot is full. Picking a ball up is done by GameElements when the roller spins.
+     */
+    private void addIntakeRoller(PhysicsWorld world, RobotConfig.Chassis c) {
+        boolean hasIntake = config.devices.stream().anyMatch(dv -> "intake".equals(dv.role));
+        if (!hasIntake) return;
+        double len = c.widthM * 0.82 - 2 * ROLLER_RADIUS_M;
+        DGeom roller = OdeHelper.createCapsule(world.space, ROLLER_RADIUS_M, len);
+        roller.setBody(chassis);
+        roller.setOffsetPosition(c.lengthM / 2 + ROLLER_AHEAD_M, 0, ROLLER_HEIGHT_M - chassisZ);
+        roller.setOffsetRotation(new DMatrix3(1, 0, 0, 0, 0, -1, 0, 1, 0));   // capsule axis (z) across the robot (y)
+        PhysicsWorld.Material rm = new PhysicsWorld.Material("roller");
+        rm.mu = rm.mu2 = 0.6;
+        rm.bounce = 0.1;
+        rm.owner = this;
+        // Balls only: the chassis already meets walls and structures, and a rounded roller end
+        // touching a wall first would twist the robot.
+        world.register(roller, rm, PhysicsWorld.CAT_ROLLER, PhysicsWorld.CAT_BALL);
+    }
+
     public RobotBody(PhysicsWorld world, RobotConfig config, java.util.function.Function<String, MotorUnit> motorByName) {
         this.world = world;
         this.config = config;
@@ -100,6 +125,7 @@ public final class RobotBody {
         world.register(chassisGeom, cm, PhysicsWorld.CAT_CHASSIS,
                 PhysicsWorld.CAT_GROUND | PhysicsWorld.CAT_STATIC | PhysicsWorld.CAT_BALL);
         world.setChassis(chassis);
+        addIntakeRoller(world, c);
 
         double a = d.wheelbaseM / 2, b = d.trackWidthM / 2;
         double s = Math.sqrt(0.5);

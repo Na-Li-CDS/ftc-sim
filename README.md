@@ -144,8 +144,10 @@ are wrong in the same way they would be on the robot.
   4 pre-loaded in your robot; the three absent robots' pre-loads sit in the middle of their LOADING
   ZONE against the wall; 3 NECTAR in each upward-facing CELL and 5 in each ALLIANCE AREA. Loose
   balls roll and bounce, slow down with air drag in flight and rolling resistance on the tiles,
-  and the robot pushes them. A robot with an `intake` role picks up balls
-  in front of its roller (reverse it to spit one out) and holds at most 4 (rule G407); a `feeder`
+  and the robot pushes them. A robot with an `intake` role has a roller across its front, 3 cm in
+  radius and 4.5 cm off the tiles, that is solid to balls. The spinning roller picks up a ball that
+  touches it (reverse it to spit one out) and holds at most 4 (rule G407; the top bar's
+  *In robot* count shows how many it has, and it starts with 4 pre-loaded); a `feeder`
   then sends them into the `launcher`, which throws them at about half the flywheel's surface
   speed, at an angle set by the `hood` servo.
 - **HIVES** are solid seesaws. Each CELL has a floor, side walls and a peaked roof, is closed at
@@ -160,8 +162,25 @@ are wrong in the same way they would be on the robot.
   Just over the tipping point it starts slowly: the HIVE can creep for a few seconds before it
   swings over. The
   top bar shows how many balls are in each HIVE's CELLS (audience / rear) and how many times it
-  has tipped. That is not a MATCH score. Balls in FLOWERS and ALLIANCE AREAS stay put (those
-  holders are not modeled as containers yet). *Reset* also resets the HIVES and the game pieces.
+  has tipped. That is not a MATCH score. *Reset* also resets the HIVES and the game pieces.
+- **FLOWERS** are open tubes built from Competition Manual 9.7: a lower ring on the tiles with a
+  7.1 cm hole for the bottom POLLEN, the Retrieval Opening above it (open except for the square
+  extrusion on the wall side), a tube as wide as the 10.15 cm top opening up to 54.6 cm, so POLLEN
+  stack single file, and the backstop.
+  The 4 starting POLLEN are stacked inside. A ball launched or dropped in the top lands on the
+  stack. The middle ring lets POLLEN through but not NECTAR: a NECTAR put in the top comes to rest
+  on it and stays in the FLOWER, and locks in any POLLEN put in on top of it. Without a NECTAR, a
+  POLLEN put into an empty FLOWER falls through and rolls out of the bottom. Drive up to the
+  Retrieval Opening and run the intake: the low
+  roller reaches in and takes the bottom one, and the rest drop down and are taken one at a time.
+  A full robot can bump its roller into the opening instead: a firm bump pushes the bottom POLLEN
+  out. Only the weight of the stack holds the bottom one in place, so once it is gone the ones
+  above drop through the tall Retrieval Opening and roll out onto the tiles toward the front or
+  sides, usually all of them. Real POLLEN are not perfectly round; the simulator gives each one
+  that drops out of the middle ring a roll in a random open direction.
+  The middle ring has a funnel on top so POLLEN don't catch on its edge. The robot's body stops at
+  the FLOWER's frame. On the field four pipes join the upper and middle rings; here the tube is
+  closed so balls can't fall out between them.
 - **Human player NECTAR**: press **N** (red) or **M** (blue), or the *+ Red NECTAR* / *+ Blue
   NECTAR* buttons, to put one NECTAR from that ALLIANCE AREA into its LOADING ZONE, at rest at
   the first free spot along the alliance wall. Each button shows how many are left (5 per color
@@ -172,8 +191,7 @@ are wrong in the same way they would be on the robot.
 - **Loop timing**: hardware calls take about as long as on a real Control Hub, so control-loop
   tuning carries over.
 
-**Not simulated yet**: VisionPortal / AprilTag / color-blob processing, scoring, taking POLLEN
-out of a FLOWER, LEDs and sounds, Limelight, OctoQuad, legacy BNO055 / Modern Robotics sensors.
+**Not simulated yet**: VisionPortal / AprilTag / color-blob processing, scoring, LEDs and sounds, Limelight, OctoQuad, legacy BNO055 / Modern Robotics sensors.
 OpModes that use them are skipped at build time with the reason.
 
 ## Checking the simulator itself
@@ -189,7 +207,8 @@ The suite includes:
 - `GameElementsTest`: POLLEN and NECTAR counts and staging per section 10.3.1, balls at rest,
   pushing, intake (4-ball limit), launching, and the CELLS: NECTAR stays in the upward-facing
   CELLS, a ball shot into the open end stays, a ball dropped on the roof bounces off, and a ball
-  in a downward-facing CELL rolls out.
+  in a downward-facing CELL rolls out; POLLEN stay stacked in the FLOWERS, the intake takes them out
+  of the bottom one by one, and a ball dropped in the top lands on the stack.
 - `HiveTipTest`: the HIVE calibration table from the Event Field Setup Guide (section 12.3), with
   balls gently placed or tossed in, and a tip dumping the CELL and turning the other CELL up.
 - `DrivetrainPhysicsTest`, `RestDriftTest`: speed, strafing, turning, RUN_TO_POSITION, wall

@@ -23,8 +23,13 @@ public final class FieldModel {
     public record Box(String name, double cx, double cy, double cz, double sx, double sy, double sz) {
     }
 
-    /** A vertical cylinder obstacle. */
-    public record Post(String name, double cx, double cy, double radius, double height) {
+    /**
+     * A FLOWER: an upright tube against the perimeter wall. Balls go in at the top ({@code height})
+     * and POLLEN come out of the Retrieval Opening at the bottom, which faces {@code yaw} (into the
+     * field). {@code innerRadius} is the inside of the tube; {@code retrievalTop} the height of the
+     * Retrieval Opening, where the middle ring starts.
+     */
+    public record Flower(String name, double x, double y, double yaw, double innerRadius, double height, double retrievalTop) {
     }
 
     /**
@@ -68,9 +73,9 @@ public final class FieldModel {
     public final double wallHeight;
     public final double tapeWidth;
     public final List<Box> boxes = new ArrayList<>();
-    public final List<Post> posts = new ArrayList<>();
+    public final List<Flower> flowers = new ArrayList<>();
     public final List<Tape> tapes = new ArrayList<>();
-    /** Static structure balls can hit up high: axle, sign board and the A-frame legs. World frame. */
+    /** Static structure: axle, sign board, A-frame legs and the FLOWERS. World frame. */
     public final List<Panel> panels = new ArrayList<>();
     /** One HIVE's CELLS and arm, in the hive frame (the same for both HIVES; they turn on the pivot). */
     public final List<Panel> hivePanels = new ArrayList<>();
@@ -130,13 +135,8 @@ public final class FieldModel {
         }
 
         // FLOWERS stand against the walls.
-        JsonObject flowers = json.getAsJsonObject("flowers");
-        for (String name : flowers.keySet()) {
-            JsonObject f = flowers.getAsJsonObject(name);
-            JsonArray axis = f.getAsJsonArray("axis_m");
-            double h = f.get("opening_height_m").getAsDouble();
-            posts.add(new Post(name, axis.get(0).getAsDouble(), axis.get(1).getAsDouble(), 0.075, h));
-        }
+        JsonObject flowerJson = json.getAsJsonObject("flowers");
+        for (String name : flowerJson.keySet()) addFlower(name, flowerJson.getAsJsonObject(name));
         // Taped areas: LOADING ZONES are outlined, GARDENS are solid strips along the walls.
         JsonObject zones = json.getAsJsonObject("loading_zones");
         for (String alliance : zones.keySet()) {
@@ -155,6 +155,11 @@ public final class FieldModel {
     private static double[] rotX(double a) {
         double c = Math.cos(a), s = Math.sin(a);
         return new double[]{1, 0, 0, 0, c, -s, 0, s, c};
+    }
+
+    private static double[] rotZ(double a) {
+        double c = Math.cos(a), s = Math.sin(a);
+        return new double[]{c, -s, 0, s, c, 0, 0, 0, 1};
     }
 
     private static double[] rotY(double a) {
@@ -191,6 +196,111 @@ public final class FieldModel {
     /** A box in the hive frame, optionally tilted about its own y axis (roof halves). */
     private void hivePanel(String name, double x, double y, double z, double sx, double sy, double sz, double tiltY) {
         hivePanels.add(new Panel(name, new double[]{x, y, z}, new double[]{sx, sy, sz}, rotY(tiltY)));
+    }
+
+    /** Thickness of the FLOWER's tube walls as modeled. */
+    private static final double FLOWER_WALL_M = 0.008;
+    /** Lower ring (Competition Manual 9.7): 1.0 cm tall, 7.1 cm hole for the bottom POLLEN. */
+    private static final double LOWER_RING_TOP_M = 0.010, LOWER_RING_HOLE_M = 0.0355, LOWER_RING_OUTER_M = 0.07;
+    /**
+     * Middle ring at the top of the Retrieval Opening: 1.5 cm tall, with an opening between a POLLEN
+     * (7.1 cm) and a NECTAR (9.1 cm). POLLEN drop through to the lower ring; a NECTAR put in the top
+     * comes to rest on the middle ring and cannot come out of the bottom, as on the field. The exact
+     * size is not in the manual's text. 8.8 cm: at 8.2 cm a POLLEN pressed off-center by the one
+     * above it could wedge on the ring's edge and stop the stack.
+     */
+    private static final double MIDDLE_RING_HOLE_M = 0.044, MIDDLE_RING_HEIGHT_M = 0.015, FUNNEL_HEIGHT_M = 0.02;
+    /** The square extrusion joining the middle and lower rings on the wall side. */
+    private static final double EXTRUSION_M = 0.0254;
+    private static final int FLOWER_SEGMENTS = 16;
+
+    /**
+     * One FLOWER as solid pieces (Competition Manual 9.7), in a frame on its axis with +x pointing
+     * into the field and -x toward the wall:
+     * <ul>
+     *   <li>the lower ring on the tiles, with a 7.1 cm hole the bottom POLLEN sits in;</li>
+     *   <li>the Retrieval Opening above it ("retrieval_opening_m"), open except for the square
+     *       extrusion on the wall side;</li>
+     *   <li>the middle ring, which lets POLLEN through but stops NECTAR;</li>
+     *   <li>the tube from the middle ring up to the top, as wide as the 10.15 cm top opening, so
+     *       POLLEN stack single file and a NECTAR (9.1 cm) still fits. On the field the upper and
+     *       middle rings are joined by four pipes; here the sides are closed so balls stack inside
+     *       it as they do on the field;</li>
+     *   <li>the 3.15 cm backstop on the wall side of the top opening.</li>
+     * </ul>
+     */
+    private void addFlower(String name, JsonObject f) {
+        JsonArray axis = f.getAsJsonArray("axis_m");
+        double x = axis.get(0).getAsDouble(), y = axis.get(1).getAsDouble();
+        double yaw = f.get("inward_yaw_rad").getAsDouble();
+        double h = f.get("opening_height_m").getAsDouble();
+        double open = f.get("opening_diameter_m").getAsDouble() / 2;
+        double back = f.get("backstop_height_m").getAsDouble();
+        // The tube is as wide as the top opening, so POLLEN stack single file and two can't wedge
+        // side by side (a 12.2 cm tube, the field data's "scoring_volume", let them jam).
+        double inner = open;
+        double retrievalTop = f.getAsJsonArray("retrieval_opening_m").get(1).getAsDouble();
+        Flower fl = new Flower(name, x, y, yaw, inner, h, retrievalTop);
+        flowers.add(fl);
+        double t = FLOWER_WALL_M, full = 2 * Math.PI;
+        flowerRing(fl, "lower ring", LOWER_RING_HOLE_M, LOWER_RING_OUTER_M - LOWER_RING_HOLE_M, 0, LOWER_RING_TOP_M, 0, full, FLOWER_SEGMENTS);
+        flowerPanel(fl, "extrusion", -(inner + EXTRUSION_M / 2), 0, (LOWER_RING_TOP_M + retrievalTop) / 2,
+                EXTRUSION_M, EXTRUSION_M, retrievalTop - LOWER_RING_TOP_M, 0);
+        double middleTop = retrievalTop + MIDDLE_RING_HEIGHT_M;
+        flowerRing(fl, "middle ring", MIDDLE_RING_HOLE_M, inner + t - MIDDLE_RING_HOLE_M, retrievalTop, middleTop, 0, full, FLOWER_SEGMENTS);
+        flowerFunnel(fl, MIDDLE_RING_HOLE_M, inner, middleTop, middleTop + FUNNEL_HEIGHT_M);
+        flowerRing(fl, "tube", inner, t, middleTop, h, 0, full, FLOWER_SEGMENTS);
+        flowerRing(fl, "backstop", open, 0.006, h, h + back, Math.PI / 2, 3 * Math.PI / 2, FLOWER_SEGMENTS / 2);
+    }
+
+    /**
+     * A funnel on top of the middle ring, from the tube wall down to the ring's opening, so a POLLEN
+     * coming down off-center slides to the opening instead of catching on the ring's flat top.
+     */
+    private void flowerFunnel(Flower f, double rIn, double rOut, double z0, double z1) {
+        double run = rOut - rIn, rise = z1 - z0, len = Math.hypot(run, rise), t = 0.006;
+        double nx = -rise / len, nz = run / len;                 // surface normal: up and inward
+        double rc = (rIn + rOut) / 2 - nx * t / 2, zc = (z0 + z1) / 2 - nz * t / 2;
+        double tilt = -Math.atan2(rise, run), span = 2 * Math.PI / FLOWER_SEGMENTS;
+        double w = 2 * rOut * Math.tan(span / 2) + 0.002;
+        double c = Math.cos(f.yaw()), s = Math.sin(f.yaw());
+        for (int k = 0; k < FLOWER_SEGMENTS; k++) {
+            double a = (k + 0.5) * span, lx = rc * Math.cos(a), ly = rc * Math.sin(a);
+            panels.add(new Panel(f.name() + " funnel", new double[]{f.x() + c * lx - s * ly, f.y() + s * lx + c * ly, zc},
+                    new double[]{len, w, t}, mul(rotZ(f.yaw() + a), rotY(tilt))));
+        }
+    }
+
+    private static double[] mul(double[] a, double[] b) {
+        double[] o = new double[9];
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) o[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
+        }
+        return o;
+    }
+
+    /** A ring (or arc from a0 to a1) of boxes: inner radius r, radial thickness, from z0 to z1. */
+    private void flowerRing(Flower f, String part, double r, double thick, double z0, double z1, double a0, double a1, int n) {
+        double span = (a1 - a0) / n, rc = r + thick / 2, w = 2 * (r + thick) * Math.tan(span / 2) + 0.002;
+        for (int k = 0; k < n; k++) {
+            double a = a0 + (k + 0.5) * span;
+            flowerPanel(f, part, rc * Math.cos(a), rc * Math.sin(a), (z0 + z1) / 2, thick, w, z1 - z0, a);
+        }
+    }
+
+    /** A box in the FLOWER's frame, turned by localYaw about its own vertical axis. */
+    private void flowerPanel(Flower f, String part, double lx, double ly, double z, double sx, double sy, double sz, double localYaw) {
+        double c = Math.cos(f.yaw()), s = Math.sin(f.yaw());
+        panels.add(new Panel(f.name() + " " + part, new double[]{f.x() + c * lx - s * ly, f.y() + s * lx + c * ly, z},
+                new double[]{sx, sy, sz}, rotZ(f.yaw() + localYaw)));
+    }
+
+    /** The FLOWER a point is inside (within its tube, below its top), or null. */
+    public String flowerAt(double wx, double wy, double wz) {
+        for (Flower f : flowers) {
+            if (Math.hypot(wx - f.x(), wy - f.y()) < f.innerRadius() && wz < f.height()) return f.name();
+        }
+        return null;
     }
 
     /**

@@ -57,9 +57,10 @@ class GameElementsTest {
         assertEquals(8, balls.stream().filter(b -> b.color.equals("blue")).count());
         assertEquals(0.0355, balls.get(0).radius, 1e-4);
         assertEquals(0.0455, balls.get(balls.size() - 1).radius, 1e-4);
-        // 10.3.1 POLLEN: 16 in the 4 FLOWERS (staged), 8 in GARDENS + 12 absent-robot pre-loads (free), 4 in this robot.
-        assertEquals(16, count(balls, "yellow", State.STAGED));
-        assertEquals(20, count(balls, "yellow", State.FREE));
+        // 10.3.1 POLLEN: 16 in the 4 FLOWERS, 8 in GARDENS, 12 absent-robot pre-loads (all free), 4 in this robot.
+        assertEquals(0, count(balls, "yellow", State.STAGED));
+        assertEquals(36, count(balls, "yellow", State.FREE));
+        for (int n : s.elements.flowerCounts().values()) assertEquals(4, n);
         assertEquals(4, count(balls, "yellow", State.HELD));
         assertEquals(GameElements.PRELOAD, s.elements.heldCount());
         // NECTAR: 3 free in the up CELL (held by its walls) + 5 staged in the ALLIANCE AREA.
@@ -78,7 +79,7 @@ class GameElementsTest {
         Setup s = setup("mecanum.json");
         s.run(2.0);
         for (Ball b : s.elements.balls()) {
-            if (b.state() != State.FREE || s.elements.cellOf(b) != null) continue;
+            if (b.state() != State.FREE || s.elements.cellOf(b) != null || s.elements.flowerOf(b) != null) continue;
             DVector3C p = b.position();
             assertEquals(b.radius, p.get2(), 0.004, "ball " + b.id + " should rest on the floor");
             assertTrue(Math.abs(p.get0()) < 1.8288 && Math.abs(p.get1()) < 1.8288, "ball " + b.id + " inside the walls");
@@ -229,6 +230,151 @@ class GameElementsTest {
         s.elements.restage();
         assertEquals(5, s.elements.waitingNectar("red"));
         assertEquals(5, s.elements.waitingNectar("blue"));
+    }
+
+    @Test
+    void pollenStayStackedInTheFlowers() throws Exception {
+        Setup s = setup("mecanum.json");
+        s.run(3.0);
+        for (int n : s.elements.flowerCounts().values()) assertEquals(4, n, "flowers " + s.elements.flowerCounts());
+        for (Ball b : s.elements.balls()) {
+            if (s.elements.flowerOf(b) == null) continue;
+            assertTrue(b.velocity().length() < 0.01, "POLLEN " + b.id + " at rest in its FLOWER");
+        }
+        // The bottom one sits in the lower ring's hole, on the tiles.
+        double lowest = s.elements.balls().stream().filter(b -> "flower_red".equals(s.elements.flowerOf(b)))
+                .mapToDouble(b -> b.position().get2()).min().orElseThrow();
+        assertEquals(0.0355, lowest, 0.003);
+    }
+
+    @Test
+    void intakeTakesPollenFromTheBottomOfAFlowerAndTheStackDrops() throws Exception {
+        Setup s = setup("mecanum.json");
+        emptyRobot(s);
+        FieldModel.Flower f = s.rig.world.field.flowers.stream().filter(x -> x.name().equals("flower_red")).findFirst().orElseThrow();
+        // Drive the running intake up to the red FLOWER's Retrieval Opening: the roller reaches in,
+        // takes the bottom POLLEN, and each one above drops down and is taken in turn.
+        s.rig.motors.get("intake").port.power = 1;
+        driveIntoFlower(s, f, 0.3, 3.0);
+        assertEquals(4, s.elements.heldCount(), "all 4 POLLEN came out of the bottom");
+        assertEquals(0, s.elements.flowerCounts().get("flower_red"));
+    }
+
+    @Test
+    void aFullRobotsRollerKnocksTheBottomPollenOut() throws Exception {
+        Setup s = setup("mecanum.json");   // full: 4 pre-loaded, so the intake can't take any
+        FieldModel.Flower f = s.rig.world.field.flowers.stream().filter(x -> x.name().equals("flower_red")).findFirst().orElseThrow();
+        java.util.List<Ball> stack = s.elements.balls().stream().filter(b -> "flower_red".equals(s.elements.flowerOf(b))).toList();
+        long out = 0;
+        for (int bump = 0; bump < 3 && out == 0; bump++) {   // a firm bump, slightly off center
+            driveIntoFlower(s, f, 0.6, 2.5, 0.02);
+            out = stack.stream().filter(b -> s.elements.flowerOf(b) == null).count();
+        }
+        assertTrue(out >= 1, "a bump pushed the bottom POLLEN out");
+        for (Ball b : stack) {
+            if (s.elements.flowerOf(b) == null) assertEquals(b.radius, b.position().get2(), 0.005, "knocked out onto the tiles");
+        }
+        // The robot's body stopped at the FLOWER's frame; only the low roller reached in.
+        double front = Math.hypot(s.rig.body.position().get0() - f.x(), s.rig.body.position().get1() - f.y()) - 0.2286;
+        assertTrue(front > f.innerRadius(), "chassis front " + front + " m from the FLOWER's axis");
+    }
+
+    @Test
+    void onceTheBottomPollenIsGoneTheOthersRollOut() throws Exception {
+        Setup s = setup("mecanum.json");
+        s.run(1.0);
+        java.util.List<Ball> stack = s.elements.balls().stream().filter(b -> "flower_red".equals(s.elements.flowerOf(b)))
+                .sorted((a, b) -> Double.compare(a.position().get2(), b.position().get2())).toList();
+        assertEquals(4, stack.size(), "the stack holds the bottom one in place");
+        s.elements.placeBall(stack.get(0), 0.5, 1.2);   // the bottom POLLEN is knocked away
+        s.run(3.0);
+        long out = stack.stream().skip(1).filter(b -> s.elements.flowerOf(b) == null).count();
+        assertTrue(out >= 2, "the POLLEN above dropped and rolled out of the Retrieval Opening: " + out + " of 3");
+        for (Ball b : stack.subList(1, 4)) {
+            if (s.elements.flowerOf(b) == null) assertEquals(b.radius, b.position().get2(), 0.005, "rolled out onto the tiles");
+        }
+    }
+
+    @Test
+    void pollenInAnEmptyFlowerFallsThroughButANectarLocksItIn() throws Exception {
+        Setup s = setup("mecanum.json");
+        FieldModel.Flower f = s.rig.world.field.flowers.stream().filter(x -> x.name().equals("flower_red")).findFirst().orElseThrow();
+        java.util.List<Ball> stack = s.elements.balls().stream().filter(b -> "flower_red".equals(s.elements.flowerOf(b))).toList();
+        int k = 0;
+        for (Ball b : stack) s.elements.placeBall(b, 0.3 + 0.12 * k++, 1.3);   // empty the FLOWER
+        s.run(0.5);
+        // A POLLEN dropped into the empty FLOWER falls through and rolls out of the bottom.
+        Ball p1 = stack.get(0);
+        s.elements.throwBall(p1, f.x() + 0.005, f.y(), f.height() + 0.15, 0, 0, -1.0);
+        s.run(2.0);
+        assertEquals(null, s.elements.flowerOf(p1), "nothing holds a lone POLLEN in");
+        // A NECTAR stops on the middle ring and locks in the POLLEN put in on top of it.
+        s.elements.introduceNectar("red");
+        Ball nectar = s.elements.balls().stream().filter(b -> b.color.equals("red") && b.state() == State.FREE
+                && s.elements.cellOf(b) == null).findFirst().orElseThrow();
+        s.elements.throwBall(nectar, f.x() + 0.005, f.y(), f.height() + 0.15, 0, 0, -1.0);
+        s.run(2.0);
+        assertEquals("flower_red", s.elements.flowerOf(nectar), "the NECTAR stays on the middle ring");
+        for (Ball b : stack.subList(1, 4)) {
+            s.elements.throwBall(b, f.x() + 0.005, f.y(), f.height() + 0.15, 0, 0, -1.0);
+            s.run(1.0);
+        }
+        s.run(1.0);
+        for (Ball b : stack.subList(1, 4)) assertEquals("flower_red", s.elements.flowerOf(b), "POLLEN locked in above the NECTAR");
+        assertEquals(4, s.elements.flowerCounts().get("flower_red"));
+    }
+
+    @Test
+    void ballDroppedInTheTopLandsOnTheStack() throws Exception {
+        Setup s = setup("mecanum.json");
+        FieldModel.Flower f = s.rig.world.field.flowers.stream().filter(x -> x.name().equals("flower_blue")).findFirst().orElseThrow();
+        Ball ball = s.elements.balls().stream().filter(b -> b.kind.equals("pollen") && b.state() == State.FREE
+                && s.elements.flowerOf(b) == null).findFirst().orElseThrow();
+        s.elements.throwBall(ball, f.x() + 0.01, f.y(), f.height() + 0.2, 0, 0, 0);
+        s.run(2.0);
+        assertEquals("flower_blue", s.elements.flowerOf(ball));
+        assertEquals(5, s.elements.flowerCounts().get("flower_blue"));
+    }
+
+    @Test
+    void nectarInAFlowerStopsAtTheMiddleRing() throws Exception {
+        Setup s = setup("mecanum.json");
+        emptyRobot(s);
+        FieldModel.Flower f = s.rig.world.field.flowers.stream().filter(x -> x.name().equals("flower_red")).findFirst().orElseThrow();
+        s.elements.introduceNectar("red");
+        Ball nectar = s.elements.balls().stream().filter(b -> b.color.equals("red") && b.state() == State.FREE
+                && s.elements.cellOf(b) == null).findFirst().orElseThrow();
+        s.elements.throwBall(nectar, f.x() + 0.005, f.y(), f.height() + 0.2, 0, 0, 0);
+        s.run(2.0);
+        assertEquals("flower_red", s.elements.flowerOf(nectar), "a NECTAR goes in the top");
+        // Take all the POLLEN out of the bottom: the NECTAR comes down to the middle ring and stays.
+        s.rig.motors.get("intake").port.power = 1;
+        driveIntoFlower(s, f, 0.3, 4.0);
+        assertEquals(4, s.elements.heldCount(), "the 4 POLLEN came out");
+        assertEquals("flower_red", s.elements.flowerOf(nectar), "the NECTAR did not");
+        assertTrue(nectar.position().get2() > 0.11, "resting on the middle ring, z " + nectar.position().get2());
+        assertEquals(1, s.elements.flowerCounts().get("flower_red"));
+    }
+
+    /** Drives the robot straight at a FLOWER's Retrieval Opening from 0.9 m out, for this long. */
+    private static void driveIntoFlower(Setup s, FieldModel.Flower f, double power, double seconds) {
+        driveIntoFlower(s, f, power, seconds, 0);
+    }
+
+    /** As above, with the robot shifted sideways by offset (m) from the FLOWER's center line. */
+    private static void driveIntoFlower(Setup s, FieldModel.Flower f, double power, double seconds, double offset) {
+        double c = Math.cos(f.yaw()), sn = Math.sin(f.yaw());
+        s.rig.place(f.x() + c * 0.9 - sn * offset, f.y() + sn * 0.9 + c * offset, f.yaw() + Math.PI);
+        for (String m : new String[]{"front_left_drive", "back_left_drive"}) s.rig.motors.get(m).port.power = -power;
+        for (String m : new String[]{"front_right_drive", "back_right_drive"}) s.rig.motors.get(m).port.power = power;
+        s.run(seconds);
+    }
+
+    private static void emptyRobot(Setup s) {
+        int k = 0;
+        for (Ball b : s.elements.balls()) {
+            if (b.state() == State.HELD) s.elements.placeBall(b, 0.5 + 0.15 * k++, 1.2);
+        }
     }
 
     private static Ball freePollen(Setup s) {

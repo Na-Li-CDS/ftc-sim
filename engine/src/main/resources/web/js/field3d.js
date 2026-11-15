@@ -255,34 +255,66 @@ export class FieldView {
     return this._tagTex;
   }
 
+  /**
+   * A FLOWER (Competition Manual 9.7), in a frame on its axis with +x into the field: the lower ring
+   * on the tiles with the hole the bottom POLLEN sits in, the Retrieval Opening above it (open
+   * except for the square extrusion on the wall side), the middle ring, four pipes up to the top
+   * ring with its opening, the backstop on the wall side, and the gold petal ring.
+   */
   addFlower(flower, top) {
     const [x, y] = flower.axis_m;
     const h = flower.opening_height_m;
+    const open = flower.opening_diameter_m / 2;
+    const inner = open;   // the tube is as wide as the top opening (matches the simulator's physics)
+    const retrievalTop = flower.retrieval_opening_m?.[1] ?? 0.101;
+    const back = flower.backstop_height_m ?? 0.0315;
     const grp = new THREE.Group();
     grp.position.set(x, y, 0);
-    const bars = new THREE.MeshStandardMaterial({ color: COLORS.flower, roughness: 0.5 });
-    for (let i = 0; i < 6; i++) {
-      const a = i / 6 * Math.PI * 2;
-      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, h, 6), bars);
-      bar.rotation.x = Math.PI / 2;
-      bar.position.set(Math.cos(a) * 0.055, Math.sin(a) * 0.055, h / 2);
-      bar.castShadow = true;
-      grp.add(bar);
+    grp.rotation.z = flower.inward_yaw_rad ?? 0;
+    const green = new THREE.MeshStandardMaterial({ color: COLORS.flower, roughness: 0.5 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x24262a, roughness: 0.7 });
+    const ring = (rIn, rOut, z0, z1, mat, a0 = 0, a1 = Math.PI * 2) => {
+      const shape = new THREE.Shape();
+      shape.absarc(0, 0, rOut, a0, a1, false);
+      if (a1 - a0 >= Math.PI * 2 - 1e-6) {
+        const hole = new THREE.Path();
+        hole.absarc(0, 0, rIn, 0, Math.PI * 2, true);
+        shape.holes.push(hole);
+      } else {
+        shape.absarc(0, 0, rIn, a1, a0, true);
+      }
+      const m = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: z1 - z0, bevelEnabled: false, curveSegments: 32 }), mat);
+      m.position.z = z0;
+      m.castShadow = true;
+      grp.add(m);
+    };
+    ring(0.0355, 0.07, 0, 0.010, dark);                                   // lower ring with the POLLEN hole
+    const ext = new THREE.Mesh(new THREE.BoxGeometry(0.0254, 0.0254, retrievalTop - 0.010), green);
+    ext.position.set(-(inner + 0.0127), 0, (0.010 + retrievalTop) / 2);   // square extrusion, wall side
+    ext.castShadow = true;
+    grp.add(ext);
+    ring(0.044, inner + 0.008, retrievalTop, retrievalTop + 0.015, green); // middle ring: POLLEN pass, NECTAR stop
+    for (let i = 0; i < 4; i++) {                                         // four pipes
+      const a = Math.PI / 4 + i * Math.PI / 2;
+      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, h - retrievalTop, 10), green);
+      pipe.rotation.x = Math.PI / 2;
+      pipe.position.set(Math.cos(a) * (inner + 0.008), Math.sin(a) * (inner + 0.008), (h + retrievalTop) / 2);
+      pipe.castShadow = true;
+      grp.add(pipe);
     }
-    for (const z of [0.12, 0.3]) {
-      const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.005, 6, 24), bars);
-      hoop.position.z = z;
-      grp.add(hoop);
-    }
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(top?.radius_m ?? 0.07, 0.012, 10, 32),
+    // The tube balls stack in, faint so the stack inside stays visible.
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(inner + 0.004, inner + 0.004, h - retrievalTop - 0.015, 32, 1, true),
+      new THREE.MeshStandardMaterial({ color: COLORS.flower, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false }));
+    tube.rotation.x = Math.PI / 2;
+    tube.position.z = (h + retrievalTop + 0.015) / 2;
+    grp.add(tube);
+    ring(open, inner + 0.008, h - 0.01, h, green);                        // top ring and its opening
+    ring(open, open + 0.006, h, h + back, green, Math.PI / 2, Math.PI * 3 / 2); // backstop, wall side
+    const petals = new THREE.Mesh(new THREE.TorusGeometry(top?.radius_m ?? 0.095, 0.012, 10, 32),
       new THREE.MeshStandardMaterial({ color: COLORS.gold, metalness: 0.6, roughness: 0.35 }));
-    ring.position.z = h;
-    ring.castShadow = true;
-    grp.add(ring);
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.012, 24), new THREE.MeshStandardMaterial({ color: 0x24262a }));
-    base.rotation.x = Math.PI / 2;
-    base.position.z = 0.006;
-    grp.add(base);
+    petals.position.z = h;
+    petals.castShadow = true;
+    grp.add(petals);
     this.fieldGroup.add(grp);
   }
 
@@ -294,9 +326,14 @@ export class FieldView {
     this.balls = [];
     const geos = {};
     const mats = {};
+    const holes = this.ballHoles ??= this.holesTexture();
     for (const b of list || []) {
-      const geo = geos[b.r] ??= new THREE.SphereGeometry(b.r, 20, 14);
-      const mat = mats[b.color] ??= new THREE.MeshStandardMaterial({ color: BALL_COLORS[b.color] ?? 0xffffff, roughness: 0.45 });
+      const geo = geos[b.r] ??= new THREE.SphereGeometry(b.r, 32, 20);
+      // Perforated plastic balls (POLLEN and NECTAR are wiffle-style): the holes are cut out of the
+      // shell, and its inside shows through them.
+      const mat = mats[b.color] ??= new THREE.MeshStandardMaterial({
+        color: BALL_COLORS[b.color] ?? 0xffffff, roughness: 0.45, alphaMap: holes, alphaTest: 0.5, side: THREE.DoubleSide,
+      });
       const m = new THREE.Mesh(geo, mat);
       m.castShadow = true;
       m.receiveShadow = true;
@@ -304,6 +341,38 @@ export class FieldView {
       this.ballGroup.add(m);
       this.balls.push(m);
     }
+  }
+
+  /**
+   * Where the holes are on a ball's shell, as an alpha map (white = plastic, black = hole) in the
+   * sphere's longitude/latitude layout: a ring of 8 around the middle, 6 in each ring at 40 degrees,
+   * and one at each pole: 22 holes, close to the real balls.
+   */
+  holesTexture() {
+    const W = 512, H = 256, c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#000';
+    const a = 0.2;   // hole radius, radians of arc
+    const hole = (lon, lat) => {
+      const y = (0.5 - lat / Math.PI) * H, ry = a / Math.PI * H;
+      const rx = Math.min(W / 2, a / (2 * Math.PI) * W / Math.max(Math.cos(lat), 0.05));
+      for (const dx of [-W, 0, W]) {
+        ctx.beginPath();
+        ctx.ellipse(lon / (2 * Math.PI) * W + dx, y, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
+    for (let i = 0; i < 8; i++) hole(i * Math.PI / 4, 0);
+    for (const lat of [0.7, -0.7]) for (let i = 0; i < 6; i++) hole(i * Math.PI / 3 + (lat > 0 ? 0.3 : 0.8), lat);
+    ctx.fillRect(0, 0, W, a / Math.PI * H);            // the hole at each pole
+    ctx.fillRect(0, H - a / Math.PI * H, W, a / Math.PI * H);
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = THREE.RepeatWrapping;
+    return tex;
   }
 
   // ---- robot -------------------------------------------------------------------------------
