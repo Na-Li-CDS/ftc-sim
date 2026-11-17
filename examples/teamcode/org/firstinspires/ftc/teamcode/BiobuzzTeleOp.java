@@ -20,7 +20,7 @@ import com.qualcomm.robotcore.util.Range;
 /**
  * Example TeleOp for the simulator's default mecanum robot (robots/mecanum.json). It uses only
  * the FTC SDK, so it runs unchanged on a real robot whose configuration uses the same names.
- *
+ * Sheryl
  * Xbox controller (gamepad1):
  *   left stick      drive. Robot-centric: forward = toward the intake, whichever way the robot faces.
  *   right stick X   turn
